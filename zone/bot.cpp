@@ -318,7 +318,7 @@ NPCType Bot::FillNPCTypeStruct(uint32 botSpellsID, std::string botName, std::str
 	BotNPCType.d_melee_texture2 = 0;
 	BotNPCType.qglobal = false;
 	BotNPCType.attack_speed = 0;
-	BotNPCType.runspeed = 0.7f;
+	BotNPCType.runspeed = 45.0f;
 	BotNPCType.bodytype = 1;
 	BotNPCType.findable = 0;
 	BotNPCType.hp_regen = 1;
@@ -349,7 +349,7 @@ NPCType Bot::CreateDefaultNPCTypeStructForBot(std::string botName, std::string b
 	Result.drakkin_details = 0;
 	Result.drakkin_heritage = 0;
 	Result.drakkin_tattoo = 0;
-	Result.runspeed = 0.7f;
+	Result.runspeed = 45.0f;
 	Result.bodytype = 1;
 	Result.findable = 0;
 	Result.hp_regen = 1;
@@ -3009,7 +3009,7 @@ void Bot::AI_Process() {
 				Mob* follow = entity_list.GetMob(GetFollowID());
 				if(follow) {
 					float dist = DistanceSquared(m_Position, follow->GetPosition());
-					int speed = follow->GetRunspeed();
+					int speed = 45.0f; // follow->GetRunspeed();
 					if(dist < GetFollowDistance() + 1000)
 						speed = follow->GetWalkspeed();
 
