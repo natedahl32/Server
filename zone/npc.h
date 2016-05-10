@@ -96,6 +96,7 @@ class NPC : public Mob
 {
 public:
 	static NPC* SpawnNPC(const char* spawncommand, const glm::vec4& position, Client* client = nullptr);
+	static bool	SpawnZoneController();
 	static int8 GetAILevel(bool iForceReRead = false);
 
 	NPC(const NPCType* data, Spawn2* respawn, const glm::vec4& position, int iflymode, bool IsCorpse = false);
@@ -105,7 +106,7 @@ public:
 	//abstract virtual function implementations requird by base abstract class
 	virtual bool Death(Mob* killerMob, int32 damage, uint16 spell_id, SkillUseTypes attack_skill);
 	virtual void Damage(Mob* from, int32 damage, uint16 spell_id, SkillUseTypes attack_skill, bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false, int special = 0);
-	virtual bool Attack(Mob* other, int Hand = MainPrimary, bool FromRiposte = false, bool IsStrikethrough = false,
+	virtual bool Attack(Mob* other, int Hand = EQEmu::legacy::SlotPrimary, bool FromRiposte = false, bool IsStrikethrough = false,
 		bool IsFromSpell = false, ExtraAttackOptions *opts = nullptr, int special = 0);
 	virtual bool HasRaid() { return false; }
 	virtual bool HasGroup() { return false; }
@@ -164,7 +165,7 @@ public:
 	virtual FACTION_VALUE GetReverseFactionCon(Mob* iOther);
 
 	void	GoToBind(uint8 bindnum = 0)	{ GMMove(m_SpawnPoint.x, m_SpawnPoint.y, m_SpawnPoint.z, m_SpawnPoint.w); }
-	void	Gate();
+	void	Gate(uint8 bindnum = 0);
 
 	void	GetPetState(SpellBuff_Struct *buffs, uint32 *items, char *name);
 	void	SetPetState(SpellBuff_Struct *buffs, uint32 *items);
@@ -494,7 +495,7 @@ protected:
 
 	uint16	skills[HIGHEST_SKILL+1];
 
-	uint32	equipment[EmuConstants::EQUIPMENT_SIZE];	//this is an array of item IDs
+	uint32	equipment[EQEmu::legacy::EQUIPMENT_SIZE];	//this is an array of item IDs
 
 	uint32	herosforgemodel;			//this is the Hero Forge Armor Model (i.e 63 or 84 or 203)
 	uint16	d_melee_texture1;			//this is an item Material value

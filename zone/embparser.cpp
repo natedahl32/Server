@@ -1,5 +1,5 @@
 /*  EQEMu:  Everquest Server Emulator
-	Copyright (C) 2001-2006  EQEMu Development Team (http://eqemulator.net)
+	Copyright (C) 2001-2016 EQEMu Development Team (http://eqemulator.net)
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -9,11 +9,11 @@
 	but WITHOUT ANY WARRANTY except by those people which sell it, which
 	are required to give you total support for your newly bought product;
 	without even the implied warranty of MERCHANTABILITY or FITNESS FOR
-	A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+	A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
 	along with this program; if not, write to the Free Software
-	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307  USA
 */
 
 #ifdef EMBPERL
@@ -114,7 +114,9 @@ const char *QuestEventSubroutines[_LargestEventID] = {
 	"EVENT_RESPAWN",
 	"EVENT_DEATH_COMPLETE",
 	"EVENT_UNHANDLED_OPCODE",
-	"EVENT_TICK"
+	"EVENT_TICK",
+	"EVENT_SPAWN_ZONE",
+	"EVENT_DEATH_ZONE",
 };
 
 PerlembParser::PerlembParser() : perl(nullptr) {
@@ -1050,8 +1052,8 @@ void PerlembParser::ExportMobVariables(bool isPlayerQuest, bool isGlobalPlayerQu
 
 	if(mob) {
 		ExportVar(package_name.c_str(), "name", mob->GetName());
-		ExportVar(package_name.c_str(), "race", GetRaceName(mob->GetRace()));
-		ExportVar(package_name.c_str(), "class", GetEQClassName(mob->GetClass()));
+		ExportVar(package_name.c_str(), "race", GetRaceIDName(mob->GetRace()));
+		ExportVar(package_name.c_str(), "class", GetClassIDName(mob->GetClass()));
 		ExportVar(package_name.c_str(), "ulevel", mob->GetLevel());
 		ExportVar(package_name.c_str(), "userid", mob->GetID());
 	}
@@ -1422,6 +1424,21 @@ void PerlembParser::ExportEventVariables(std::string &package_name, QuestEventID
 			ExportVar(package_name.c_str(), "itemid", iteminst->GetItem()->ID);
 			ExportVar(package_name.c_str(), "spell_id", iteminst->GetItem()->Click.Effect);
 			ExportVar(package_name.c_str(), "slotid", extradata);
+			break;
+		}
+		case EVENT_SPAWN_ZONE: {
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "spawned_entity_id", sep.arg[0]);
+			ExportVar(package_name.c_str(), "spawned_npc_id", sep.arg[1]);
+			break;
+		}
+		case EVENT_DEATH_ZONE: {
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "killer_id", sep.arg[0]);
+			ExportVar(package_name.c_str(), "killer_damage", sep.arg[1]);
+			ExportVar(package_name.c_str(), "killer_spell", sep.arg[2]);
+			ExportVar(package_name.c_str(), "killer_skill", sep.arg[3]);
+			ExportVar(package_name.c_str(), "killed_npc_id", sep.arg[4]);
 			break;
 		}
 

@@ -62,7 +62,7 @@ public:
 	//abstract virtual function implementations requird by base abstract class
 	virtual bool Death(Mob* killerMob, int32 damage, uint16 spell_id, SkillUseTypes attack_skill);
 	virtual void Damage(Mob* from, int32 damage, uint16 spell_id, SkillUseTypes attack_skill, bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false, int special = 0);
-	virtual bool Attack(Mob* other, int Hand = MainPrimary, bool FromRiposte = false, bool IsStrikethrough = false,
+	virtual bool Attack(Mob* other, int Hand = EQEmu::legacy::SlotPrimary, bool FromRiposte = false, bool IsStrikethrough = false,
 	bool IsFromSpell = false, ExtraAttackOptions *opts = nullptr, int special = 0);
 	virtual bool HasRaid() { return false; }
 	virtual bool HasGroup() { return (GetGroup() ? true : false); }
@@ -192,6 +192,7 @@ public:
 	virtual void ScaleStats(int scalepercent, bool setmax = false);
 	virtual void CalcBonuses();
 	int32 GetEndurance() const {return cur_end;} //This gets our current endurance
+	inline uint8 GetEndurancePercent() { return (uint8)((float)cur_end / (float)max_end * 100.0f); }
 	inline virtual int32 GetAC() const { return AC; }
 	inline virtual int32 GetATK() const { return ATK; }
 	inline virtual int32 GetATKBonus() const { return itembonuses.ATK + spellbonuses.ATK; }
@@ -287,7 +288,7 @@ protected:
 	std::map<uint32,MercTimer> timers;
 
 	uint16 skills[HIGHEST_SKILL+1];
-	uint32 equipment[EmuConstants::EQUIPMENT_SIZE]; //this is an array of item IDs
+	uint32 equipment[EQEmu::legacy::EQUIPMENT_SIZE]; //this is an array of item IDs
 	uint16 d_melee_texture1; //this is an item Material value
 	uint16 d_melee_texture2; //this is an item Material value (offhand)
 	uint8 prim_melee_type; //Sets the Primary Weapon attack message and animation

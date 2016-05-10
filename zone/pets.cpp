@@ -283,7 +283,7 @@ void Mob::MakePoweredPet(uint16 spell_id, const char* pettype, int16 petpower,
 			npc_type->level += 1 + ((int)act_power / 25) > npc_type->level + RuleR(Pets, PetPowerLevelCap) ? RuleR(Pets, PetPowerLevelCap) : 1 + ((int)act_power / 25); // gains an additional level for every 25 pet power
 			npc_type->min_dmg = (npc_type->min_dmg * (1 + (scale_power / 2)));
 			npc_type->max_dmg = (npc_type->max_dmg * (1 + (scale_power / 2)));
-			npc_type->size = npc_type->size * (1 + (scale_power / 2)) > npc_type->size * 3 ? npc_type->size * 3 : (1 + (scale_power / 2));
+			npc_type->size = npc_type->size * (1 + (scale_power / 2)) > npc_type->size * 3 ? npc_type->size * 3 : npc_type-> size * (1 + (scale_power / 2));
 		}
 		record.petpower = act_power;
 	}
@@ -383,6 +383,7 @@ void Mob::MakePoweredPet(uint16 spell_id, const char* pettype, int16 petpower,
 									"ORDER BY RAND() LIMIT 1", zone->GetShortName());
 		auto results = database.QueryDatabase(query);
 		if (!results.Success()) {
+			safe_delete(npc_type);
 			return;
 		}
 
@@ -417,12 +418,12 @@ void Mob::MakePoweredPet(uint16 spell_id, const char* pettype, int16 petpower,
 	// the base items for the pet. These are always loaded
 	// so that a rank 1 suspend minion does not kill things
 	// like the special back items some focused pets may receive.
-	uint32 petinv[EmuConstants::EQUIPMENT_SIZE];
+	uint32 petinv[EQEmu::legacy::EQUIPMENT_SIZE];
 	memset(petinv, 0, sizeof(petinv));
 	const Item_Struct *item = 0;
 
 	if (database.GetBasePetItems(record.equipmentset, petinv)) {
-		for (int i = 0; i<EmuConstants::EQUIPMENT_SIZE; i++)
+		for (int i = 0; i < EQEmu::legacy::EQUIPMENT_SIZE; i++)
 			if (petinv[i]) {
 				item = database.GetItem(petinv[i]);
 				npc->AddLootDrop(item, &npc->itemlist, 0, 1, 127, true, true);
@@ -475,7 +476,7 @@ void Pet::SetTarget(Mob *mob)
 		return;
 
 	auto owner = GetOwner();
-	if (owner && owner->IsClient() && owner->CastToClient()->GetClientVersionBit() & BIT_UFAndLater) {
+	if (owner && owner->IsClient() && owner->CastToClient()->ClientVersionBit() & EQEmu::versions::bit_UFAndLater) {
 		auto app = new EQApplicationPacket(OP_PetHoTT, sizeof(ClientTarget_Struct));
 		auto ct = (ClientTarget_Struct *)app->pBuffer;
 		ct->new_target = mob ? mob->GetID() : 0;
@@ -572,7 +573,7 @@ void NPC::GetPetState(SpellBuff_Struct *pet_buffs, uint32 *items, char *name) {
 	strn0cpy(name, GetName(), 64);
 
 	//save their items, we only care about what they are actually wearing
-	memcpy(items, equipment, sizeof(uint32)*EmuConstants::EQUIPMENT_SIZE);
+	memcpy(items, equipment, sizeof(uint32) * EQEmu::legacy::EQUIPMENT_SIZE);
 
 	//save their buffs.
 	for (int i=0; i < GetPetMaxTotalSlots(); i++) {
@@ -660,7 +661,7 @@ void NPC::SetPetState(SpellBuff_Struct *pet_buffs, uint32 *items) {
 	}
 
 	//restore their equipment...
-	for (i = 0; i < EmuConstants::EQUIPMENT_SIZE; i++) {
+	for (i = 0; i < EQEmu::legacy::EQUIPMENT_SIZE; i++) {
 		if(items[i] == 0)
 			continue;
 
@@ -722,7 +723,7 @@ bool ZoneDatabase::GetBasePetItems(int32 equipmentset, uint32 *items) {
 			{
 				slot = atoi(row[0]);
 
-				if (slot >= EmuConstants::EQUIPMENT_SIZE)
+				if (slot >= EQEmu::legacy::EQUIPMENT_SIZE)
 					continue;
 
 				if (items[slot] == 0)

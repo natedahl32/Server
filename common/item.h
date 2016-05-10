@@ -29,6 +29,7 @@ class EvolveInfo;			// Stores information about an evolving item family
 #include "../common/eq_constants.h"
 #include "../common/item_struct.h"
 #include "../common/timer.h"
+#include "../common/bodytypes.h"
 
 #include <list>
 #include <map>
@@ -113,22 +114,23 @@ public:
 	///////////////////////////////
 	// Public Methods
 	///////////////////////////////
-
-	Inventory() { m_version = ClientVersion::Unknown; m_versionset = false; }
+	
+	Inventory() { m_inventory_version = EQEmu::versions::InventoryVersion::Unknown; m_inventory_version_set = false; }
 	~Inventory();
 
-	// Inventory v2 creep
-	bool SetInventoryVersion(ClientVersion version) {
-		if (!m_versionset) {
-			m_version = version;
-			return (m_versionset = true);
+	// inv2 creep
+	bool SetInventoryVersion(EQEmu::versions::InventoryVersion inventory_version) {
+		if (!m_inventory_version_set) {
+			m_inventory_version = EQEmu::versions::ValidateInventoryVersion(inventory_version);
+			return (m_inventory_version_set = true);
 		}
 		else {
 			return false;
 		}
 	}
+	bool SetInventoryVersion(EQEmu::versions::ClientVersion client_version) { return SetInventoryVersion(EQEmu::versions::ConvertClientVersionToInventoryVersion(client_version)); }
 
-	ClientVersion GetInventoryVersion() { return m_version; }
+	EQEmu::versions::InventoryVersion InventoryVersion() { return m_inventory_version; }
 
 	static void CleanDirty();
 	static void MarkDirty(ItemInst *inst);
@@ -251,8 +253,8 @@ protected:
 
 private:
 	// Active inventory version
-	ClientVersion m_version;
-	bool m_versionset;
+	EQEmu::versions::InventoryVersion m_inventory_version;
+	bool m_inventory_version_set;
 };
 
 class SharedDatabase;
@@ -418,6 +420,58 @@ public:
 	void StopTimer(std::string name);
 	void ClearTimers();
 
+	// Get a total of a stat, including augs
+	// These functions should be used in place of other code manually totaling
+	// to centralize where it is done to make future changes easier (ex. whenever powersources come around)
+	// and to minimize errors. CalcItemBonuses however doesn't use these in interest of performance
+	// by default these do not recurse into augs
+	int GetItemArmorClass(bool augments = false) const;
+	int GetItemElementalDamage(int &magic, int &fire, int &cold, int &poison, int &disease, int &chromatic, int &prismatic, int &physical, int &corruption, bool augments = false) const;
+	// These two differ in the fact that they're quick checks (they are checked BEFORE the one above
+	int GetItemElementalFlag(bool augments = false) const;
+	int GetItemElementalDamage(bool augments = false) const;
+	int GetItemRecommendedLevel(bool augments = false) const;
+	int GetItemRequiredLevel(bool augments = false) const;
+	int GetItemWeaponDamage(bool augments = false) const;
+	int GetItemBackstabDamage(bool augments = false) const;
+	// these two are just quick checks
+	int GetItemBaneDamageBody(bool augments = false) const;
+	int GetItemBaneDamageRace(bool augments = false) const;
+	int GetItemBaneDamageBody(bodyType against, bool augments = false) const;
+	int GetItemBaneDamageRace(uint16 against, bool augments = false) const;
+	int GetItemMagical(bool augments = false) const;
+	int GetItemHP(bool augments = false) const;
+	int GetItemMana(bool augments = false) const;
+	int GetItemEndur(bool augments = false) const;
+	int GetItemAttack(bool augments = false) const;
+	int GetItemStr(bool augments = false) const;
+	int GetItemSta(bool augments = false) const;
+	int GetItemDex(bool augments = false) const;
+	int GetItemAgi(bool augments = false) const;
+	int GetItemInt(bool augments = false) const;
+	int GetItemWis(bool augments = false) const;
+	int GetItemCha(bool augments = false) const;
+	int GetItemMR(bool augments = false) const;
+	int GetItemFR(bool augments = false) const;
+	int GetItemCR(bool augments = false) const;
+	int GetItemPR(bool augments = false) const;
+	int GetItemDR(bool augments = false) const;
+	int GetItemCorrup(bool augments = false) const;
+	int GetItemHeroicStr(bool augments = false) const;
+	int GetItemHeroicSta(bool augments = false) const;
+	int GetItemHeroicDex(bool augments = false) const;
+	int GetItemHeroicAgi(bool augments = false) const;
+	int GetItemHeroicInt(bool augments = false) const;
+	int GetItemHeroicWis(bool augments = false) const;
+	int GetItemHeroicCha(bool augments = false) const;
+	int GetItemHeroicMR(bool augments = false) const;
+	int GetItemHeroicFR(bool augments = false) const;
+	int GetItemHeroicCR(bool augments = false) const;
+	int GetItemHeroicPR(bool augments = false) const;
+	int GetItemHeroicDR(bool augments = false) const;
+	int GetItemHeroicCorrup(bool augments = false) const;
+	int GetItemHaste(bool augments = false) const;
+
 protected:
 	//////////////////////////
 	// Protected Members
@@ -470,45 +524,6 @@ public:
 	EvolveInfo();
 	EvolveInfo(uint32 first, uint8 max, bool allkills, uint32 L2, uint32 L3, uint32 L4, uint32 L5, uint32 L6, uint32 L7, uint32 L8, uint32 L9, uint32 L10);
 	~EvolveInfo();
-};
-
-struct LightProfile_Struct
-{
-	/*
-	Current criteria (light types):
-	Equipment:	{ 0 .. 15 }
-	General:	{ 9 .. 13 }
-
-	Notes:
-	- Initial character load and item movement updates use different light source update behaviors
-	-- Server procedure matches the item movement behavior since most updates occur post-character load
-	- MainAmmo is not considered when determining light sources
-	- No 'Sub' or 'Aug' items are recognized as light sources
-	- Light types '< 9' and '> 13' are not considered for general (carried) light sources
-	- If values > 0x0F are valid, then assignment limiters will need to be removed
-	- MainCursor 'appears' to be a valid light source update slot..but, have not experienced updates during debug sessions
-	- All clients have a bug regarding stackable items (light and sound updates are not processed when picking up an item)
-	-- The timer-based update cancels out the invalid light source
-	*/
-
-	static uint8 TypeToLevel(uint8 lightType);
-	static bool IsLevelGreater(uint8 leftType, uint8 rightType);
-
-	// Light types (classifications)
-	struct {
-		uint8 Innate;		// Defined by db field `npc_types`.`light` - where appropriate
-		uint8 Equipment;	// Item_Struct::light value of worn/carried equipment
-		uint8 Spell;		// Set value of any light-producing spell (can be modded to mimic equip_light behavior)
-		uint8 Active;		// Highest value of all light sources
-	} Type;
-
-	// Light levels (intensities) - used to determine which light source should be active
-	struct {
-		uint8 Innate;
-		uint8 Equipment;
-		uint8 Spell;
-		uint8 Active;
-	} Level;
 };
 
 #endif // #define __ITEM_H

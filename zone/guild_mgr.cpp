@@ -322,7 +322,7 @@ void ZoneGuildManager::ProcessWorldPacket(ServerPacket *pack) {
 		else if(c != nullptr && s->guild_id != GUILD_NONE) {
 			//char is in zone, and has changed into a new guild, send MOTD.
 			c->SendGuildMOTD();
-			if(c->GetClientVersion() >= ClientVersion::RoF)
+			if (c->ClientVersion() >= EQEmu::versions::ClientVersion::RoF)
 			{
 				c->SendGuildRanks();
 			}
@@ -688,11 +688,68 @@ void GuildBankManager::SendGuildBank(Client *c)
 		return;
 	}
 
+	auto &guild_bank = *Iterator;
+
+	// RoF+ uses a bulk list packet -- This is also how the Action 0 of older clients basically works
+	if (c->ClientVersionBit() & EQEmu::versions::bit_RoFAndLater) {
+		auto outapp = new EQApplicationPacket(OP_GuildBankItemList, sizeof(GuildBankItemListEntry_Struct) * 240);
+		for (int i = 0; i < GUILD_BANK_DEPOSIT_AREA_SIZE; ++i) {
+			const Item_Struct *Item = database.GetItem(guild_bank->Items.DepositArea[i].ItemID);
+			if (Item) {
+				outapp->WriteUInt8(1);
+				outapp->WriteUInt32(guild_bank->Items.DepositArea[i].Permissions);
+				outapp->WriteString(guild_bank->Items.DepositArea[i].WhoFor);
+				outapp->WriteString(guild_bank->Items.DepositArea[i].Donator);
+				outapp->WriteUInt32(Item->ID);
+				outapp->WriteUInt32(Item->Icon);
+				if (Item->Stackable) {
+					outapp->WriteUInt32(guild_bank->Items.DepositArea[i].Quantity);
+					outapp->WriteUInt8(Item->StackSize == guild_bank->Items.DepositArea[i].Quantity ? 0 : 1);
+				} else {
+					outapp->WriteUInt32(1);
+					outapp->WriteUInt8(0);
+				}
+				outapp->WriteUInt8(Item->IsEquipable(c->GetBaseRace(), c->GetBaseClass()) ? 1 : 0);
+				outapp->WriteString(Item->Name);
+			} else {
+				outapp->WriteUInt8(0); // empty
+			}
+		}
+		outapp->SetWritePosition(outapp->GetWritePosition() + 20); // newer clients have 40 deposit slots, keep them 0 for now
+
+		for (int i = 0; i < GUILD_BANK_MAIN_AREA_SIZE; ++i) {
+			const Item_Struct *Item = database.GetItem(guild_bank->Items.MainArea[i].ItemID);
+			if (Item) {
+				outapp->WriteUInt8(1);
+				outapp->WriteUInt32(guild_bank->Items.MainArea[i].Permissions);
+				outapp->WriteString(guild_bank->Items.MainArea[i].WhoFor);
+				outapp->WriteString(guild_bank->Items.MainArea[i].Donator);
+				outapp->WriteUInt32(Item->ID);
+				outapp->WriteUInt32(Item->Icon);
+				if (Item->Stackable) {
+					outapp->WriteUInt32(guild_bank->Items.MainArea[i].Quantity);
+					outapp->WriteUInt8(Item->StackSize == guild_bank->Items.MainArea[i].Quantity ? 0 : 1);
+				} else {
+					outapp->WriteUInt32(1);
+					outapp->WriteUInt8(0);
+				}
+				outapp->WriteUInt8(Item->IsEquipable(c->GetBaseRace(), c->GetBaseClass()) ? 1 : 0);
+				outapp->WriteString(Item->Name);
+			} else {
+				outapp->WriteUInt8(0); // empty
+			}
+		}
+
+		outapp->size = outapp->GetWritePosition(); // truncate to used size
+		c->FastQueuePacket(&outapp);
+		return;
+	}
+
 	for(int i = 0; i < GUILD_BANK_DEPOSIT_AREA_SIZE; ++i)
 	{
-		if((*Iterator)->Items.DepositArea[i].ItemID > 0)
+		if(guild_bank->Items.DepositArea[i].ItemID > 0)
 		{
-			const Item_Struct *Item = database.GetItem((*Iterator)->Items.DepositArea[i].ItemID);
+			const Item_Struct *Item = database.GetItem(guild_bank->Items.DepositArea[i].ItemID);
 
 			if(!Item)
 				continue;
@@ -703,22 +760,22 @@ void GuildBankManager::SendGuildBank(Client *c)
 
 			if(!Item->Stackable)
 				gbius->Init(GuildBankItemUpdate, 1, i, GuildBankDepositArea, 1, Item->ID, Item->Icon, 1,
-						(*Iterator)->Items.DepositArea[i].Permissions, 0, 0);
+						guild_bank->Items.DepositArea[i].Permissions, 0, 0);
 			else
 			{
-				if((*Iterator)->Items.DepositArea[i].Quantity == Item->StackSize)
+				if(guild_bank->Items.DepositArea[i].Quantity == Item->StackSize)
 					gbius->Init(GuildBankItemUpdate, 1, i, GuildBankDepositArea, 1, Item->ID, Item->Icon,
-							(*Iterator)->Items.DepositArea[i].Quantity, (*Iterator)->Items.DepositArea[i].Permissions, 0, 0);
+							guild_bank->Items.DepositArea[i].Quantity, guild_bank->Items.DepositArea[i].Permissions, 0, 0);
 				else
 					gbius->Init(GuildBankItemUpdate, 1, i, GuildBankDepositArea, 1, Item->ID, Item->Icon,
-							(*Iterator)->Items.DepositArea[i].Quantity, (*Iterator)->Items.DepositArea[i].Permissions, 1, 0);
+							guild_bank->Items.DepositArea[i].Quantity, guild_bank->Items.DepositArea[i].Permissions, 1, 0);
 			}
 
 			strn0cpy(gbius->ItemName, Item->Name, sizeof(gbius->ItemName));
 
-			strn0cpy(gbius->Donator, (*Iterator)->Items.DepositArea[i].Donator, sizeof(gbius->Donator));
+			strn0cpy(gbius->Donator, guild_bank->Items.DepositArea[i].Donator, sizeof(gbius->Donator));
 
-			strn0cpy(gbius->WhoFor, (*Iterator)->Items.DepositArea[i].WhoFor, sizeof(gbius->WhoFor));
+			strn0cpy(gbius->WhoFor, guild_bank->Items.DepositArea[i].WhoFor, sizeof(gbius->WhoFor));
 
 			c->FastQueuePacket(&outapp);
 		}
@@ -726,9 +783,9 @@ void GuildBankManager::SendGuildBank(Client *c)
 
 	for(int i = 0; i < GUILD_BANK_MAIN_AREA_SIZE; ++i)
 	{
-		if((*Iterator)->Items.MainArea[i].ItemID > 0)
+		if(guild_bank->Items.MainArea[i].ItemID > 0)
 		{
-			const Item_Struct *Item = database.GetItem((*Iterator)->Items.MainArea[i].ItemID);
+			const Item_Struct *Item = database.GetItem(guild_bank->Items.MainArea[i].ItemID);
 
 			if(!Item)
 				continue;
@@ -741,22 +798,22 @@ void GuildBankManager::SendGuildBank(Client *c)
 
 			if(!Item->Stackable)
 				gbius->Init(GuildBankItemUpdate, 1, i, GuildBankMainArea, 1, Item->ID, Item->Icon, 1,
-						(*Iterator)->Items.MainArea[i].Permissions, 0, Useable);
+						guild_bank->Items.MainArea[i].Permissions, 0, Useable);
 			else
 			{
-				if((*Iterator)->Items.MainArea[i].Quantity == Item->StackSize)
+				if(guild_bank->Items.MainArea[i].Quantity == Item->StackSize)
 					gbius->Init(GuildBankItemUpdate, 1, i, GuildBankMainArea, 1, Item->ID, Item->Icon,
-							(*Iterator)->Items.MainArea[i].Quantity, (*Iterator)->Items.MainArea[i].Permissions, 0, Useable);
+							guild_bank->Items.MainArea[i].Quantity, guild_bank->Items.MainArea[i].Permissions, 0, Useable);
 				else
 					gbius->Init(GuildBankItemUpdate, 1, i, GuildBankMainArea, 1, Item->ID, Item->Icon,
-							(*Iterator)->Items.MainArea[i].Quantity, (*Iterator)->Items.MainArea[i].Permissions, 1, Useable);
+							guild_bank->Items.MainArea[i].Quantity, guild_bank->Items.MainArea[i].Permissions, 1, Useable);
 			}
 
 			strn0cpy(gbius->ItemName, Item->Name, sizeof(gbius->ItemName));
 
-			strn0cpy(gbius->Donator, (*Iterator)->Items.MainArea[i].Donator, sizeof(gbius->Donator));
+			strn0cpy(gbius->Donator, guild_bank->Items.MainArea[i].Donator, sizeof(gbius->Donator));
 
-			strn0cpy(gbius->WhoFor, (*Iterator)->Items.MainArea[i].WhoFor, sizeof(gbius->WhoFor));
+			strn0cpy(gbius->WhoFor, guild_bank->Items.MainArea[i].WhoFor, sizeof(gbius->WhoFor));
 
 			c->FastQueuePacket(&outapp);
 		}
@@ -1349,8 +1406,9 @@ bool GuildApproval::ProcessApproval()
 
 GuildApproval::GuildApproval(const char* guildname, Client* owner,uint32 id)
 {
-	database.GetVariable("GuildCreation", founders, 3);
-	uint8 tmp = atoi(founders);
+	std::string founders;
+	database.GetVariable("GuildCreation", founders);
+	uint8 tmp = atoi(founders.c_str());
 	deletion_timer = new Timer(1800000);
 	strcpy(guild,guildname);
 	this->owner = owner;
@@ -1368,8 +1426,9 @@ GuildApproval::~GuildApproval()
 
 bool GuildApproval::AddMemberApproval(Client* addition)
 {
-	database.GetVariable("GuildCreation", founders, 3);
-	uint8 tmp = atoi(founders);
+	std::string founders;
+	database.GetVariable("GuildCreation", founders);
+	uint8 tmp = atoi(founders.c_str());
 	for(int i=0;i<tmp;i++)
 	{
 		if(members[i] && members[i] == addition)
@@ -1398,8 +1457,9 @@ bool GuildApproval::AddMemberApproval(Client* addition)
 
 void GuildApproval::ApprovedMembers(Client* requestee)
 {
-	database.GetVariable("GuildCreation", founders, 3);
-	uint8 tmp = atoi(founders);
+	std::string founders;
+	database.GetVariable("GuildCreation", founders);
+	uint8 tmp = atoi(founders.c_str());
 	for(int i=0;i<tmp;i++)
 	{
 		if(members[i])
@@ -1414,8 +1474,9 @@ void GuildApproval::GuildApproved()
 
 	if(!owner)
 		return;
-	database.GetVariable("GuildCreation", founders, 3);
-	uint8 tmp = atoi(founders);
+	std::string founders;
+	database.GetVariable("GuildCreation", founders);
+	uint8 tmp = atoi(founders.c_str());
 	uint32 tmpeq = guild_mgr.CreateGuild(guild, owner->CharacterID());
 	guild_mgr.SetGuild(owner->CharacterID(),tmpeq,2);
 	owner->SendAppearancePacket(AT_GuildID,true,false);

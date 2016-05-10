@@ -20,7 +20,7 @@ namespace Titanium
 	static OpcodeManager *opcodes = nullptr;
 	static Strategy struct_strategy;
 
-	char* SerializeItem(const ItemInst *inst, int16 slot_id_in, uint32 *length, uint8 depth);
+	std::string SerializeItem(const ItemInst *inst, int16 slot_id_in, uint8 depth);
 
 	// server to client inventory location converters
 	static inline int16 ServerToTitaniumSlot(uint32 serverSlot);
@@ -111,9 +111,9 @@ namespace Titanium
 		return(r);
 	}
 
-	const ClientVersion Strategy::GetClientVersion() const
+	const EQEmu::versions::ClientVersion Strategy::ClientVersion() const
 	{
-		return ClientVersion::Titanium;
+		return EQEmu::versions::ClientVersion::Titanium;
 	}
 
 #include "ss_define.h"
@@ -275,14 +275,12 @@ namespace Titanium
 		InternalSerializedItem_Struct *eq = (InternalSerializedItem_Struct *)in->pBuffer;
 
 		//do the transform...
-		int r;
 		std::string serial_string;
-		for (r = 0; r < itemcount; r++, eq++) {
-			uint32 length;
-			char *serialized = SerializeItem((const ItemInst*)eq->inst, eq->slot_id, &length, 0);
-			if (serialized) {
-				serial_string.append(serialized, length + 1);
-				safe_delete_array(serialized);
+		for (int r = 0; r < itemcount; r++, eq++) {
+			std::string serialized = SerializeItem((const ItemInst*)eq->inst, eq->slot_id, 0); // assumed move operation: string& = string&&
+			if (!serialized.empty()) {
+				serial_string.append(serialized);
+				serial_string.push_back('\0');
 			}
 			else {
 				Log.Out(Logs::General, Logs::Netcode, "[STRUCTS] Serialization failed on item slot %d during OP_CharInventory.  Item skipped.", eq->slot_id);
@@ -290,9 +288,10 @@ namespace Titanium
 
 		}
 
-		in->size = serial_string.length();
+		// do we need to account for a trailing null escape?
+		in->size = serial_string.size();
 		in->pBuffer = new unsigned char[in->size];
-		memcpy(in->pBuffer, serial_string.c_str(), serial_string.length());
+		memcpy(in->pBuffer, serial_string.c_str(), serial_string.size());
 
 		delete[] __emu_buffer;
 
@@ -725,22 +724,21 @@ namespace Titanium
 		ItemPacket_Struct *old_item_pkt = (ItemPacket_Struct *)__emu_buffer;
 		InternalSerializedItem_Struct *int_struct = (InternalSerializedItem_Struct *)(old_item_pkt->SerializedItem);
 
-		uint32 length;
-		char *serialized = SerializeItem((ItemInst *)int_struct->inst, int_struct->slot_id, &length, 0);
-
-		if (!serialized) {
+		std::string serialized = SerializeItem((ItemInst *)int_struct->inst, int_struct->slot_id, 0); // assumed move operation: string& = string&&
+		if (serialized.empty()) {
 			Log.Out(Logs::General, Logs::Netcode, "[STRUCTS] Serialization failed on item slot %d.", int_struct->slot_id);
 			delete in;
 			return;
 		}
-		in->size = length + 5;	// ItemPacketType + Serialization + \0
+
+		in->size = serialized.size() + 5;	// ItemPacketType + Serialization + \0
 		in->pBuffer = new unsigned char[in->size];
 		ItemPacket_Struct *new_item_pkt = (ItemPacket_Struct *)in->pBuffer;
 		new_item_pkt->PacketType = old_item_pkt->PacketType;
-		memcpy(new_item_pkt->SerializedItem, serialized, length + 1);
+		memcpy(new_item_pkt->SerializedItem, serialized.c_str(), serialized.size());
+		new_item_pkt->SerializedItem[serialized.size()] = '\0';
 
 		delete[] __emu_buffer;
-		safe_delete_array(serialized);
 
 		dest->FastQueuePacket(&in, ack_req);
 	}
@@ -943,7 +941,7 @@ namespace Titanium
 		//	OUT(unknown06160[4]);
 
 		// Copy bandoliers where server and client indexes converge
-		for (r = 0; r < EmuConstants::BANDOLIERS_SIZE && r < consts::BANDOLIERS_SIZE; ++r) {
+		for (r = 0; r < EQEmu::legacy::BANDOLIERS_SIZE && r < consts::BANDOLIERS_SIZE; ++r) {
 			OUT_str(bandoliers[r].Name);
 			for (uint32 k = 0; k < consts::BANDOLIER_ITEM_COUNT; ++k) { // Will need adjusting if 'server != client' is ever true
 				OUT(bandoliers[r].Items[k].ID);
@@ -952,7 +950,7 @@ namespace Titanium
 			}
 		}
 		// Nullify bandoliers where server and client indexes diverge, with a client bias
-		for (r = EmuConstants::BANDOLIERS_SIZE; r < consts::BANDOLIERS_SIZE; ++r) {
+		for (r = EQEmu::legacy::BANDOLIERS_SIZE; r < consts::BANDOLIERS_SIZE; ++r) {
 			eq->bandoliers[r].Name[0] = '\0';
 			for (uint32 k = 0; k < consts::BANDOLIER_ITEM_COUNT; ++k) { // Will need adjusting if 'server != client' is ever true
 				eq->bandoliers[r].Items[k].ID = 0;
@@ -964,13 +962,13 @@ namespace Titanium
 		//	OUT(unknown07444[5120]);
 
 		// Copy potion belt where server and client indexes converge
-		for (r = 0; r < EmuConstants::POTION_BELT_ITEM_COUNT && r < consts::POTION_BELT_ITEM_COUNT; ++r) {
+		for (r = 0; r < EQEmu::legacy::POTION_BELT_ITEM_COUNT && r < consts::POTION_BELT_ITEM_COUNT; ++r) {
 			OUT(potionbelt.Items[r].ID);
 			OUT(potionbelt.Items[r].Icon);
 			OUT_str(potionbelt.Items[r].Name);
 		}
 		// Nullify potion belt where server and client indexes diverge, with a client bias
-		for (r = EmuConstants::POTION_BELT_ITEM_COUNT; r < consts::POTION_BELT_ITEM_COUNT; ++r) {
+		for (r = EQEmu::legacy::POTION_BELT_ITEM_COUNT; r < consts::POTION_BELT_ITEM_COUNT; ++r) {
 			eq->potionbelt.Items[r].ID = 0;
 			eq->potionbelt.Items[r].Icon = 0;
 			eq->potionbelt.Items[r].Name[0] = '\0';
@@ -1199,14 +1197,14 @@ namespace Titanium
 			if (eq->Race[char_index] > 473)
 				eq->Race[char_index] = 1;
 
-			for (int index = 0; index < _MaterialCount; ++index) {
+			for (int index = 0; index < EQEmu::legacy::MaterialCount; ++index) {
 				eq->CS_Colors[char_index][index].Color = emu_cse->Equip[index].Color.Color;
 			}
 
 			eq->BeardColor[char_index] = emu_cse->BeardColor;
 			eq->HairStyle[char_index] = emu_cse->HairStyle;
 
-			for (int index = 0; index < _MaterialCount; ++index) {
+			for (int index = 0; index < EQEmu::legacy::MaterialCount; ++index) {
 				eq->Equip[char_index][index] = emu_cse->Equip[index].Material;
 			}
 
@@ -1236,14 +1234,14 @@ namespace Titanium
 		for (; char_index < 10; ++char_index) {
 			eq->Race[char_index] = 0;
 
-			for (int index = 0; index < _MaterialCount; ++index) {
+			for (int index = 0; index < EQEmu::legacy::MaterialCount; ++index) {
 				eq->CS_Colors[char_index][index].Color = 0;
 			}
 
 			eq->BeardColor[char_index] = 0;
 			eq->HairStyle[char_index] = 0;
 
-			for (int index = 0; index < _MaterialCount; ++index) {
+			for (int index = 0; index < EQEmu::legacy::MaterialCount; ++index) {
 				eq->Equip[char_index][index] = 0;
 			}
 
@@ -2079,86 +2077,300 @@ namespace Titanium
 	}
 
 // file scope helper methods
-	char *SerializeItem(const ItemInst *inst, int16 slot_id_in, uint32 *length, uint8 depth)
+	std::string SerializeItem(const ItemInst *inst, int16 slot_id_in, uint8 depth)
 	{
-		char *serialization = nullptr;
-		char *instance = nullptr;
-		const char *protection = (const char *)"\\\\\\\\\\";
-		char *sub_items[10] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-		bool stackable = inst->IsStackable();
-		int16 slot_id = ServerToTitaniumSlot(slot_id_in);
-		uint32 merchant_slot = inst->GetMerchantSlot();
-		int16 charges = inst->GetCharges();
-		const Item_Struct *item = inst->GetUnscaledItem();
-		int i;
-		uint32 sub_length;
+		std::string serialization;
+		const char* protection = "\\\\\\\\\\";
+		const Item_Struct* item = inst->GetUnscaledItem();
 
-		MakeAnyLenString(&instance,
-			"%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|",
-			stackable ? charges : 0,
-			0,
-			//(merchant_slot == 0) ? slot_id : merchant_slot, // change when translator activated
-			(merchant_slot == 0) ? slot_id_in : merchant_slot,
-			inst->GetPrice(),
-			(merchant_slot == 0) ? 1 : inst->GetMerchantCount(),
-			inst->IsScaling() ? inst->GetExp() / 100 : 0,
-			//merchant_slot,	//instance ID, bullshit for now
-			(merchant_slot == 0) ? inst->GetSerialNumber() : merchant_slot,
-			inst->GetRecastTimestamp(),
-			(stackable ? ((inst->GetItem()->ItemType == ItemTypePotion) ? 1 : 0) : charges),
-			inst->IsAttuned() ? 1 : 0,
-			0
-			);
+		serialization = StringFormat("%.*s%s", (depth ? (depth - 1) : 0), protection, (depth ? "\"" : "")); // For leading quotes (and protection) if a subitem;
+		
+		// Instance data
+		serialization.append(
+			StringFormat(
+				"%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|",
+				(inst->IsStackable() ? inst->GetCharges() : 0), // stack count
+				0, // unknown
+				(!inst->GetMerchantSlot() ? slot_id_in : inst->GetMerchantSlot()), // inst slot/merchant slot
+				inst->GetPrice(), // merchant price
+				(!inst->GetMerchantSlot() ? 1 : inst->GetMerchantCount()), // inst count/merchant count
+				(inst->IsScaling() ? (inst->GetExp() / 100) : 0), // inst experience
+				(!inst->GetMerchantSlot() ? inst->GetSerialNumber() : inst->GetMerchantSlot()), // merchant serial number
+				inst->GetRecastTimestamp(), // recast timestamp
+				((inst->IsStackable() ? ((inst->GetItem()->ItemType == ItemTypePotion) ? 1 : 0) : inst->GetCharges())), // charge count
+				(inst->IsAttuned() ? 1 : 0), // inst attuned
+				0 // unknown
+			)
+		);
+		
+		serialization.append(StringFormat("%.*s\"", depth, protection)); // Quotes (and protection, if needed) around static data
 
-		for (i = 0; i<10; i++) {
-			ItemInst *sub = inst->GetItem(i);
-			if (sub) {
-				sub_items[i] = SerializeItem(sub, 0, &sub_length, depth + 1);
+		serialization.append(StringFormat("%i", item->ItemClass)); // item->ItemClass so we can do |%s instead of %s|
+		
+		serialization.append(
+			StringFormat(
+				"|%s|%s|%s|%i|%i|%i|%i|%i|%i|%i|%i|%s|%s|%i|%i",
+				item->Name,
+				item->Lore,
+				item->IDFile,
+				item->ID,
+				((item->Weight > 255) ? 255 : item->Weight),
+				item->NoRent,
+				item->NoDrop,
+				item->Size,
+				item->Slots,
+				item->Price,
+				item->Icon,
+				"0", // unknown
+				"0", // unknown
+				item->BenefitFlag,
+				item->Tradeskills
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i",
+				item->CR,
+				item->DR,
+				item->PR,
+				item->MR,
+				item->FR,
+				item->AStr,
+				item->ASta,
+				item->AAgi,
+				item->ADex,
+				item->ACha,
+				item->AInt,
+				item->AWis,
+				item->HP,
+				item->Mana,
+				item->AC
+			)
+		);
+
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i",
+				item->Deity,
+				item->SkillModValue,
+				item->SkillModMax,
+				item->SkillModType,
+				item->BaneDmgRace,
+				item->BaneDmgAmt,
+				item->BaneDmgBody,
+				item->Magic,
+				item->CastTime_,
+				item->ReqLevel,
+				item->BardType,
+				item->BardValue,
+				item->Light,
+				item->Delay
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%i|%i|%i|%i|%i|%s|%i|%i|%i|%i",
+				item->RecLevel,
+				item->RecSkill,
+				item->ElemDmgType,
+				item->ElemDmgAmt,
+				item->Range,
+				item->Damage,
+				item->Color,
+				item->Classes,
+				item->Races,
+				"0", // unknown
+				item->MaxCharges,
+				item->ItemType,
+				item->Material,
+				item->SellRate
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%s|%i|%s|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i",
+				"0", // unknown
+				item->CastTime_,
+				"0", // unknown
+				item->ProcRate,
+				item->CombatEffects,
+				item->Shielding,
+				item->StunResist,
+				item->StrikeThrough,
+				item->ExtraDmgSkill,
+				item->ExtraDmgAmt,
+				item->SpellShield,
+				item->Avoidance,
+				item->Accuracy,
+				item->CharmFileID
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%i|%i|%i|%i|%s",
+				item->FactionMod1,
+				item->FactionMod2,
+				item->FactionMod3,
+				item->FactionMod4,
+				item->FactionAmt1,
+				item->FactionAmt2,
+				item->FactionAmt3,
+				item->FactionAmt4,
+				item->CharmFile
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i",
+				item->AugType,
+				item->AugSlotType[0],
+				item->AugSlotVisible[0],
+				item->AugSlotType[1],
+				item->AugSlotVisible[1],
+				item->AugSlotType[2],
+				item->AugSlotVisible[2],
+				item->AugSlotType[3],
+				item->AugSlotVisible[3],
+				item->AugSlotType[4],
+				item->AugSlotVisible[4]
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%i|%i|%i|%i|%i|%s|%i|%i|%i|%i|%i|%i",
+				item->LDoNTheme,
+				item->LDoNPrice,
+				item->LDoNSold,
+				item->BagType,
+				item->BagSlots,
+				item->BagSize,
+				item->BagWR,
+				item->Book,
+				item->BookType,
+				item->Filename,
+				item->BaneDmgRaceAmt,
+				item->AugRestrict,
+				item->LoreGroup,
+				item->PendingLoreFlag,
+				item->ArtifactFlag,
+				item->SummonedFlag
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i",
+				item->Favor,
+				item->FVNoDrop,
+				item->Endur,
+				item->DotShielding,
+				item->Attack,
+				item->Regen,
+				item->ManaRegen,
+				item->EnduranceRegen,
+				item->Haste,
+				item->DamageShield,
+				item->RecastDelay,
+				item->RecastType,
+				item->GuildFavor,
+				item->AugDistiller
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%s|%s|%i|%i|%s|%i|%i|%i|%i|%i|%i",
+				"0", // unknown
+				"0", // unknown
+				item->Attuneable,
+				item->NoPet,
+				"0", // unknown
+				item->PointType,
+				item->PotionBelt,
+				item->PotionBeltSlots,
+				item->StackSize,
+				item->NoTransfer,
+				item->Stackable
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%s",
+				item->Click.Effect,
+				item->Click.Type,
+				item->Click.Level2,
+				item->Click.Level,
+				"0" // Click name
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%s",
+				item->Proc.Effect,
+				item->Proc.Type,
+				item->Proc.Level2,
+				item->Proc.Level,
+				"0" // Proc name
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%s",
+				item->Worn.Effect,
+				item->Worn.Type,
+				item->Worn.Level2,
+				item->Worn.Level,
+				"0" // Worn name
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%s",
+				item->Focus.Effect,
+				item->Focus.Type,
+				item->Focus.Level2,
+				item->Focus.Level,
+				"0" // Focus name
+			)
+		);
+
+		serialization.append(
+			StringFormat(
+				"|%i|%i|%i|%i|%s",
+				item->Scroll.Effect,
+				item->Scroll.Type,
+				item->Scroll.Level2,
+				item->Scroll.Level,
+				"0" // Scroll name
+			)
+		);
+
+		serialization.append(StringFormat("%.*s\"", depth, protection)); // Quotes (and protection, if needed) around static data
+
+		for (int index = SUB_INDEX_BEGIN; index < consts::ITEM_CONTAINER_SIZE; ++index) {
+			ItemInst *sub = inst->GetItem(index);
+			if (!sub) {
+				serialization.push_back('|'); // Sub items (empty)
+			}
+			else {
+				std::string sub_item = SerializeItem(sub, 0, (depth + 1));
+				serialization.append(StringFormat("|%s", sub_item.c_str())); // Sub items
 			}
 		}
 
-		*length = MakeAnyLenString(&serialization,
-			"%.*s%s"	// For leading quotes (and protection) if a subitem;
-			"%s"		// Instance data
-			"%.*s\""	// Quotes (and protection, if needed) around static data
-			"%i"		// item->ItemClass so we can do |%s instead of %s|
-#define I(field) "|%i"
-#define C(field) "|%s"
-#define S(field) "|%s"
-#define F(field) "|%f"
-#include "titanium_itemfields.h"
-			"%.*s\""	// Quotes (and protection, if needed) around static data
-			"|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s"	// Sub items
-			"%.*s%s"	// For trailing quotes (and protection) if a subitem;
-			, depth ? depth - 1 : 0, protection, (depth) ? "\"" : ""
-			, instance
-			, depth, protection
-			, item->ItemClass
-#define I(field) ,item->field
-#define C(field) ,field
-#define S(field) ,item->field
-#define F(field) ,item->field
-#include "titanium_itemfields.h"
-			, depth, protection
-			, sub_items[0] ? sub_items[0] : ""
-			, sub_items[1] ? sub_items[1] : ""
-			, sub_items[2] ? sub_items[2] : ""
-			, sub_items[3] ? sub_items[3] : ""
-			, sub_items[4] ? sub_items[4] : ""
-			, sub_items[5] ? sub_items[5] : ""
-			, sub_items[6] ? sub_items[6] : ""
-			, sub_items[7] ? sub_items[7] : ""
-			, sub_items[8] ? sub_items[8] : ""
-			, sub_items[9] ? sub_items[9] : ""
-			, (depth) ? depth - 1 : 0, protection, (depth) ? "\"" : ""
-			);
+		serialization.append(StringFormat("%.*s%s", (depth ? (depth - 1) : 0), protection, (depth ? "\"" : ""))); // For trailing quotes (and protection) if a subitem;
 
-		for (i = 0; i<10; i++) {
-			if (sub_items[i])
-				safe_delete_array(sub_items[i]);
-		}
-
-		safe_delete_array(instance);
 		return serialization;
 	}
 
@@ -2194,7 +2406,7 @@ namespace Titanium
 
 	static inline void ServerToTitaniumTextLink(std::string& titaniumTextLink, const std::string& serverTextLink)
 	{
-		if ((consts::TEXT_LINK_BODY_LENGTH == EmuConstants::TEXT_LINK_BODY_LENGTH) || (serverTextLink.find('\x12') == std::string::npos)) {
+		if ((consts::TEXT_LINK_BODY_LENGTH == EQEmu::legacy::TEXT_LINK_BODY_LENGTH) || (serverTextLink.find('\x12') == std::string::npos)) {
 			titaniumTextLink = serverTextLink;
 			return;
 		}
@@ -2203,7 +2415,7 @@ namespace Titanium
 
 		for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
 			if (segment_iter & 1) {
-				if (segments[segment_iter].length() <= EmuConstants::TEXT_LINK_BODY_LENGTH) {
+				if (segments[segment_iter].length() <= EQEmu::legacy::TEXT_LINK_BODY_LENGTH) {
 					titaniumTextLink.append(segments[segment_iter]);
 					// TODO: log size mismatch error
 					continue;
@@ -2234,7 +2446,7 @@ namespace Titanium
 
 	static inline void TitaniumToServerTextLink(std::string& serverTextLink, const std::string& titaniumTextLink)
 	{
-		if ((EmuConstants::TEXT_LINK_BODY_LENGTH == consts::TEXT_LINK_BODY_LENGTH) || (titaniumTextLink.find('\x12') == std::string::npos)) {
+		if ((EQEmu::legacy::TEXT_LINK_BODY_LENGTH == consts::TEXT_LINK_BODY_LENGTH) || (titaniumTextLink.find('\x12') == std::string::npos)) {
 			serverTextLink = titaniumTextLink;
 			return;
 		}

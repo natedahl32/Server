@@ -33,7 +33,8 @@ struct Item_Struct;
 #include "../common/ptimer.h"
 #include "../common/emu_opcodes.h"
 #include "../common/eq_packet_structs.h"
-#include "../common/eq_constants.h"
+//#include "../common/eq_constants.h"
+#include "../common/emu_constants.h" // inv2 watch
 #include "../common/eq_stream_intf.h"
 #include "../common/eq_packet.h"
 #include "../common/linked_list.h"
@@ -43,7 +44,7 @@ struct Item_Struct;
 #include "../common/item.h"
 #include "../common/guilds.h"
 #include "../common/item_struct.h"
-#include "../common/clientversions.h"
+//#include "../common/clientversions.h"
 
 #include "common.h"
 #include "merc.h"
@@ -217,7 +218,7 @@ public:
 	//abstract virtual function implementations required by base abstract class
 	virtual bool Death(Mob* killerMob, int32 damage, uint16 spell_id, SkillUseTypes attack_skill);
 	virtual void Damage(Mob* from, int32 damage, uint16 spell_id, SkillUseTypes attack_skill, bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false, int special = 0);
-	virtual bool Attack(Mob* other, int Hand = MainPrimary, bool FromRiposte = false, bool IsStrikethrough = false, bool IsFromSpell = false,
+	virtual bool Attack(Mob* other, int Hand = EQEmu::legacy::SlotPrimary, bool FromRiposte = false, bool IsStrikethrough = false, bool IsFromSpell = false,
 			ExtraAttackOptions *opts = nullptr, int special = 0);
 	virtual bool HasRaid() { return (GetRaid() ? true : false); }
 	virtual bool HasGroup() { return (GetGroup() ? true : false); }
@@ -226,7 +227,7 @@ public:
 	virtual inline bool IsBerserk() { return berserk; }
 	virtual int32 GetMeleeMitDmg(Mob *attacker, int32 damage, int32 minhit, float mit_rating, float atk_rating);
 	virtual void SetAttackTimer();
-	float GetQuiverHaste();
+	int GetQuiverHaste(int delay);
 	void DoAttackRounds(Mob *target, int hand, bool IsFromSpell = false);
 
 	void AI_Init();
@@ -582,8 +583,8 @@ public:
 
 	void GoToBind(uint8 bindnum = 0);
 	void GoToSafeCoords(uint16 zone_id, uint16 instance_id);
-	void Gate();
-	void SetBindPoint(int to_zone = -1, int to_instance = 0, const glm::vec3& location = glm::vec3());
+	void Gate(uint8 bindnum = 0);
+	void SetBindPoint(int bind_num = 0, int to_zone = -1, int to_instance = 0, const glm::vec3& location = glm::vec3());
 	void SetStartZone(uint32 zoneid, float x = 0.0f, float y =0.0f, float z = 0.0f);
 	uint32 GetStartZone(void);
 	void MovePC(const char* zonename, float x, float y, float z, float heading, uint8 ignorerestrictions = 0, ZoneMode zm = ZoneSolicited);
@@ -679,7 +680,7 @@ public:
 
 	void IncreaseSkill(int skill_id, int value = 1) { if (skill_id <= HIGHEST_SKILL) { m_pp.skills[skill_id] += value; } }
 	void IncreaseLanguageSkill(int skill_id, int value = 1);
-	virtual uint16 GetSkill(SkillUseTypes skill_id) const { if (skill_id <= HIGHEST_SKILL) { return((itembonuses.skillmod[skill_id] > 0) ? m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100 : m_pp.skills[skill_id]); } return 0; }
+	virtual uint16 GetSkill(SkillUseTypes skill_id) const {if (skill_id <= HIGHEST_SKILL) {return(itembonuses.skillmod[skill_id] > 0 ? (itembonuses.skillmodmax[skill_id] > 0 ? std::min(m_pp.skills[skill_id] + itembonuses.skillmodmax[skill_id], m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100) : m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100) : m_pp.skills[skill_id]);} return 0;}
 	uint32 GetRawSkill(SkillUseTypes skill_id) const { if (skill_id <= HIGHEST_SKILL) { return(m_pp.skills[skill_id]); } return 0; }
 	bool HasSkill(SkillUseTypes skill_id) const;
 	bool CanHaveSkill(SkillUseTypes skill_id) const;
@@ -698,7 +699,7 @@ public:
 	inline uint16 MaxSkill(SkillUseTypes skillid) const { return MaxSkill(skillid, GetClass(), GetLevel()); }
 	uint8 SkillTrainLevel(SkillUseTypes skillid, uint16 class_);
 
-	void TradeskillSearchResults(const std::string query, unsigned long objtype, unsigned long someid);
+	void TradeskillSearchResults(const std::string &query, unsigned long objtype, unsigned long someid);
 	void SendTradeskillDetails(uint32 recipe_id);
 	bool TradeskillExecute(DBTradeskillRecipe_Struct *spec);
 	void CheckIncreaseTradeskill(int16 bonusstat, int16 stat_modifier, float skillup_modifier, uint16 success_modifier, SkillUseTypes tradeskill);
@@ -712,6 +713,7 @@ public:
 	// use this one instead
 	void MemSpell(uint16 spell_id, int slot, bool update_client = true);
 	void UnmemSpell(int slot, bool update_client = true);
+	void UnmemSpellBySpellID(int32 spell_id);
 	void UnmemSpellAll(bool update_client = true);
 	void ScribeSpell(uint16 spell_id, int slot, bool update_client = true);
 	void UnscribeSpell(int slot, bool update_client = true);
@@ -735,7 +737,7 @@ public:
 #endif
 	uint32 GetEquipment(uint8 material_slot) const; // returns item id
 	uint32 GetEquipmentColor(uint8 material_slot) const;
-	virtual void UpdateEquipmentLight() { m_Light.Type.Equipment = m_inv.FindBrightestLightType(); m_Light.Level.Equipment = m_Light.TypeToLevel(m_Light.Type.Equipment); }
+	virtual void UpdateEquipmentLight() { m_Light.Type.Equipment = m_inv.FindBrightestLightType(); m_Light.Level.Equipment = EQEmu::lightsource::TypeToLevel(m_Light.Type.Equipment); }
 
 	inline bool AutoSplitEnabled() { return m_pp.autosplit != 0; }
 
@@ -812,57 +814,10 @@ public:
 	void QSSwapItemAuditor(MoveItem_Struct* move_in, bool postaction_call = false);
 	void PutLootInInventory(int16 slot_id, const ItemInst &inst, ServerLootItem_Struct** bag_item_data = 0);
 	bool AutoPutLootInInventory(ItemInst& inst, bool try_worn = false, bool try_cursor = true, ServerLootItem_Struct** bag_item_data = 0);
-	bool SummonItem(uint32 item_id, int16 charges = -1, uint32 aug1 = 0, uint32 aug2 = 0, uint32 aug3 = 0, uint32 aug4 = 0, uint32 aug5 = 0, uint32 aug6 = 0, bool attuned = false, uint16 to_slot = MainCursor, uint32 ornament_icon = 0, uint32 ornament_idfile = 0, uint32 ornament_hero_model = 0);
+	bool SummonItem(uint32 item_id, int16 charges = -1, uint32 aug1 = 0, uint32 aug2 = 0, uint32 aug3 = 0, uint32 aug4 = 0, uint32 aug5 = 0, uint32 aug6 = 0, bool attuned = false, uint16 to_slot = EQEmu::legacy::SlotCursor, uint32 ornament_icon = 0, uint32 ornament_idfile = 0, uint32 ornament_hero_model = 0);
 	void SetStats(uint8 type,int16 set_val);
 	void IncStats(uint8 type,int16 increase_val);
 	void DropItem(int16 slot_id);
-
-	//
-	// class Client::TextLink
-	//
-	class TextLink {
-	public:
-		enum LinkType { linkBlank = 0, linkItemData, linkLootItem, linkItemInst };
-
-		TextLink() { Reset(); }
-
-		void SetLinkType(LinkType linkType) { m_LinkType = linkType; }
-		void SetItemData(const Item_Struct* itemData) { m_ItemData = itemData; }
-		void SetLootData(const ServerLootItem_Struct* lootData) { m_LootData = lootData; }
-		void SetItemInst(const ItemInst* itemInst) { m_ItemInst = itemInst; }
-		void SetProxyItemID(uint32 proxyItemID) { m_ProxyItemID = proxyItemID; } // mainly for saylinks..but, not limited to
-		void SetProxyText(const char* proxyText) { m_ProxyText = proxyText; } // overrides standard text use
-		void SetTaskUse() { m_TaskUse = true; }
-
-		std::string GenerateLink();
-		bool LinkError() { return m_Error; }
-
-		std::string GetLink() { return m_Link; }			// contains full string format: '/12x' '<LinkBody>' '<LinkText>' '/12x'
-		std::string GetLinkBody() { return m_LinkBody; }	// contains string format: '<LinkBody>'
-		std::string GetLinkText() { return m_LinkText; }	// contains string format: '<LinkText>'
-
-		void Reset();
-
-		static bool DegenerateLinkBody(TextLinkBody_Struct& textLinkBodyStruct, const std::string& textLinkBody);
-		static bool GenerateLinkBody(std::string& textLinkBody, const TextLinkBody_Struct& textLinkBodyStruct);
-
-	private:
-		void generate_body();
-		void generate_text();
-
-		int m_LinkType;
-		const Item_Struct* m_ItemData;
-		const ServerLootItem_Struct* m_LootData;
-		const ItemInst* m_ItemInst;
-		uint32 m_ProxyItemID;
-		const char* m_ProxyText;
-		bool m_TaskUse;
-		TextLinkBody_Struct m_LinkBodyStruct;
-		std::string m_Link;
-		std::string m_LinkBody;
-		std::string m_LinkText;
-		bool m_Error;
-	};
 
 	int GetItemLinkHash(const ItemInst* inst); // move to Item_Struct..or make use of the pre-calculated database field
 
@@ -925,6 +880,8 @@ public:
 	void ResetTrade();
 	void DropInst(const ItemInst* inst);
 	bool TrainDiscipline(uint32 itemid);
+	void TrainDiscBySpellID(int32 spell_id);
+	int GetDiscSlotBySpellID(int32 spellid);
 	void SendDisciplineUpdate();
 	void SendDisciplineTimer(uint32 timer_id, uint32 duration);
 	bool UseDiscipline(uint32 spell_id, uint32 target);
@@ -1020,9 +977,9 @@ public:
 	inline int ActiveTasksInSet(int TaskSet) { return (taskstate ? taskstate->ActiveTasksInSet(TaskSet) :0); }
 	inline int CompletedTasksInSet(int TaskSet) { return (taskstate ? taskstate->CompletedTasksInSet(TaskSet) :0); }
 
-	inline const ClientVersion GetClientVersion() const { return m_ClientVersion; }
-	inline const uint32 GetClientVersionBit() const { return m_ClientVersionBit; }
-	inline void SetClientVersion(ClientVersion in) { m_ClientVersion = in; }
+	inline const EQEmu::versions::ClientVersion ClientVersion() const { return m_ClientVersion; }
+	inline const uint32 ClientVersionBit() const { return m_ClientVersionBit; }
+	inline void SetClientVersion(EQEmu::versions::ClientVersion client_version) { m_ClientVersion = client_version; }
 
 	/** Adventure Stuff **/
 	void SendAdventureError(const char *error);
@@ -1140,7 +1097,7 @@ public:
 	void HandleLFGuildResponse(ServerPacket *pack);
 	void SendLFGuildStatus();
 	void SendGuildLFGuildStatus();
-	inline bool XTargettingAvailable() const { return ((m_ClientVersionBit & BIT_UFAndLater) && RuleB(Character, EnableXTargetting)); }
+	inline bool XTargettingAvailable() const { return ((m_ClientVersionBit & EQEmu::versions::bit_UFAndLater) && RuleB(Character, EnableXTargetting)); }
 	inline uint8 GetMaxXTargets() const { return MaxXTargets; }
 	void SetMaxXTargets(uint8 NewMax);
 	bool IsXTarget(const Mob *m) const;
@@ -1272,7 +1229,7 @@ public:
 protected:
 	friend class Mob;
 	void CalcItemBonuses(StatBonuses* newbon);
-	void AddItemBonuses(const ItemInst *inst, StatBonuses* newbon, bool isAug = false, bool isTribute = false);
+	void AddItemBonuses(const ItemInst *inst, StatBonuses* newbon, bool isAug = false, bool isTribute = false, int rec_override = 0, bool ammo_slot_item = false);
 	void AdditiveWornBonuses(const ItemInst *inst, StatBonuses* newbon, bool isAug = false);
 	int CalcRecommendedLevelBonus(uint8 level, uint8 reclevel, int basestat);
 	void CalcEdibleBonuses(StatBonuses* newbon);
@@ -1533,7 +1490,7 @@ private:
 	Timer *GlobalChatLimiterTimer; //60 seconds
 	uint32 AttemptedMessages;
 
-	ClientVersion m_ClientVersion;
+	EQEmu::versions::ClientVersion m_ClientVersion;
 	uint32 m_ClientVersionBit;
 
 	int XPRate;

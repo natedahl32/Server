@@ -1,5 +1,5 @@
-/*	 EQEMu: Everquest Server Emulator
-	Copyright (C) 2001-2003 EQEMu Development Team (http://eqemulator.net)
+/*	EQEMu: Everquest Server Emulator
+	Copyright (C) 2001-2016 EQEMu Development Team (http://eqemulator.net)
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ int32 Client::GetMaxStat() const
 	if (level < 61) {
 		base = 255;
 	}
-	else if (GetClientVersion() >= ClientVersion::SoF) {
+	else if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF) {
 		base = 255 + 5 * (level - 60);
 	}
 	else if (level < 71) {
@@ -58,8 +58,8 @@ int32 Client::GetMaxResist() const
 {
 	int level = GetLevel();
 	int32 base = 500;
-	if (level > 60) {
-		base += ((level - 60) * 5);
+	if (level > 65) {
+		base += ((level - 65) * 5);
 	}
 	return base;
 }
@@ -160,7 +160,7 @@ int32 Client::LevelRegen()
 	bool sitting = IsSitting();
 	bool feigned = GetFeigned();
 	int level = GetLevel();
-	bool bonus = GetRaceBitmask(GetBaseRace()) & RuleI(Character, BaseHPRegenBonusRaces);
+	bool bonus = GetPlayerRaceBit(GetBaseRace()) & RuleI(Character, BaseHPRegenBonusRaces);
 	uint8 multiplier1 = bonus ? 2 : 1;
 	int32 hp = 0;
 	//these calculations should match up with the info from Monkly Business, which was last updated ~05/2008: http://www.monkly-business.net/index.php?pageid=abilities
@@ -409,7 +409,7 @@ uint32 Mob::GetClassLevelFactor()
 
 int32 Client::CalcBaseHP()
 {
-	if (GetClientVersion() >= ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
+	if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
 		int stats = GetSTA();
 		if (stats > 255) {
 			stats = (stats - 255) / 2;
@@ -485,7 +485,7 @@ int32 Client::GetRawItemAC()
 {
 	int32 Total = 0;
 	// this skips MainAmmo..add an '=' conditional if that slot is required (original behavior)
-	for (int16 slot_id = EmuConstants::EQUIPMENT_BEGIN; slot_id < EmuConstants::EQUIPMENT_END; slot_id++) {
+	for (int16 slot_id = EQEmu::legacy::EQUIPMENT_BEGIN; slot_id < EQEmu::legacy::EQUIPMENT_END; slot_id++) {
 		const ItemInst* inst = m_inv[slot_id];
 		if (inst && inst->IsType(ItemClassCommon)) {
 			Total += inst->GetItem()->AC;
@@ -1067,9 +1067,9 @@ int32 Client::CalcAC()
 	}
 	// Shield AC bonus for HeroicSTR
 	if (itembonuses.HeroicSTR) {
-		bool equiped = CastToClient()->m_inv.GetItem(MainSecondary);
+		bool equiped = CastToClient()->m_inv.GetItem(EQEmu::legacy::SlotSecondary);
 		if (equiped) {
-			uint8 shield = CastToClient()->m_inv.GetItem(MainSecondary)->GetItem()->ItemType;
+			uint8 shield = CastToClient()->m_inv.GetItem(EQEmu::legacy::SlotSecondary)->GetItem()->ItemType;
 			if (shield == ItemTypeShield) {
 				displayed += itembonuses.HeroicSTR / 2;
 			}
@@ -1096,9 +1096,9 @@ int32 Client::GetACMit()
 	}
 	// Shield AC bonus for HeroicSTR
 	if (itembonuses.HeroicSTR) {
-		bool equiped = CastToClient()->m_inv.GetItem(MainSecondary);
+		bool equiped = CastToClient()->m_inv.GetItem(EQEmu::legacy::SlotSecondary);
 		if (equiped) {
-			uint8 shield = CastToClient()->m_inv.GetItem(MainSecondary)->GetItem()->ItemType;
+			uint8 shield = CastToClient()->m_inv.GetItem(EQEmu::legacy::SlotSecondary)->GetItem()->ItemType;
 			if (shield == ItemTypeShield) {
 				mitigation += itembonuses.HeroicSTR / 2;
 			}
@@ -1162,7 +1162,7 @@ int32 Client::CalcBaseMana()
 	switch (GetCasterClass()) {
 		case 'I':
 			WisInt = GetINT();
-			if (GetClientVersion() >= ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
+			if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
 				if (WisInt > 100) {
 					ConvertedWisInt = (((WisInt - 100) * 5 / 2) + 100);
 					if (WisInt > 201) {
@@ -1195,7 +1195,7 @@ int32 Client::CalcBaseMana()
 			break;
 		case 'W':
 			WisInt = GetWIS();
-			if (GetClientVersion() >= ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
+			if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
 				if (WisInt > 100) {
 					ConvertedWisInt = (((WisInt - 100) * 5 / 2) + 100);
 					if (WisInt > 201) {
@@ -1306,7 +1306,7 @@ uint32 Client::CalcCurrentWeight()
 	ItemInst* ins;
 	uint32 Total = 0;
 	int x;
-	for (x = EmuConstants::EQUIPMENT_BEGIN; x <= MainCursor; x++) { // include cursor or not?
+	for (x = EQEmu::legacy::EQUIPMENT_BEGIN; x <= EQEmu::legacy::SlotCursor; x++) { // include cursor or not?
 		TempItem = 0;
 		ins = GetInv().GetItem(x);
 		if (ins) {
@@ -1316,7 +1316,7 @@ uint32 Client::CalcCurrentWeight()
 			Total += TempItem->Weight;
 		}
 	}
-	for (x = EmuConstants::GENERAL_BAGS_BEGIN; x <= EmuConstants::GENERAL_BAGS_END; x++) { // include cursor bags or not?
+	for (x = EQEmu::legacy::GENERAL_BAGS_BEGIN; x <= EQEmu::legacy::GENERAL_BAGS_END; x++) { // include cursor bags or not?
 		int TmpWeight = 0;
 		TempItem = 0;
 		ins = GetInv().GetItem(x);
@@ -1329,9 +1329,9 @@ uint32 Client::CalcCurrentWeight()
 		if (TmpWeight > 0) {
 			// this code indicates that weight redux bags can only be in the first general inventory slot to be effective...
 			// is this correct? or can we scan for the highest weight redux and use that? (need client verifications)
-			int bagslot = MainGeneral1;
+			int bagslot = EQEmu::legacy::SlotGeneral1;
 			int reduction = 0;
-			for (int m = EmuConstants::GENERAL_BAGS_BEGIN + 10; m <= EmuConstants::GENERAL_BAGS_END; m += 10) { // include cursor bags or not?
+			for (int m = EQEmu::legacy::GENERAL_BAGS_BEGIN + 10; m <= EQEmu::legacy::GENERAL_BAGS_END; m += 10) { // include cursor bags or not?
 				if (x >= m) {
 					bagslot += 1;
 				}
@@ -1355,7 +1355,7 @@ uint32 Client::CalcCurrentWeight()
 	    This is the ONLY instance I have seen where the client is hard coded to particular Item IDs to set a certain property for an item. It is very odd.
 	*/
 	// SoD+ client has no weight for coin
-	if (EQLimits::CoinHasWeight(GetClientVersion())) {
+	if (EQEmu::limits::CoinHasWeight(EQEmu::versions::ConvertClientVersionToInventoryVersion(ClientVersion()))) {
 		Total += (m_pp.platinum + m_pp.gold + m_pp.silver + m_pp.copper) / 4;
 	}
 	float Packrat = (float)spellbonuses.Packrat + (float)aabonuses.Packrat + (float)itembonuses.Packrat;
@@ -1633,13 +1633,19 @@ int32	Client::CalcMR()
 			MR = 30;
 			break;
 		case DRAKKIN:
-			MR = 35;
+		{
+			MR = 25;
+			if (GetDrakkinHeritage() == 2)
+				MR += 10;
+			else if (GetDrakkinHeritage() == 5)
+				MR += 2;
 			break;
+		}
 		default:
 			MR = 20;
 	}
 	MR += itembonuses.MR + spellbonuses.MR + aabonuses.MR;
-	if (GetClass() == WARRIOR) {
+	if (GetClass() == WARRIOR || GetClass() == BERSERKER) {
 		MR += GetLevel() / 2;
 	}
 	if (MR < 1) {
@@ -1701,14 +1707,27 @@ int32	Client::CalcFR()
 			FR = 25;
 			break;
 		case DRAKKIN:
+		{
 			FR = 25;
+			if (GetDrakkinHeritage() == 0)
+				FR += 10;
+			else if (GetDrakkinHeritage() == 5)
+				FR += 2;
 			break;
+		}
 		default:
 			FR = 20;
 	}
 	int c = GetClass();
 	if (c == RANGER) {
 		FR += 4;
+		int l = GetLevel();
+		if (l > 49) {
+			FR += l - 49;
+		}
+	}
+	if (c == MONK) {
+		FR += 8;
 		int l = GetLevel();
 		if (l > 49) {
 			FR += l - 49;
@@ -1774,12 +1793,24 @@ int32	Client::CalcDR()
 			DR = 15;
 			break;
 		case DRAKKIN:
+		{
 			DR = 15;
+			if (GetDrakkinHeritage() == 1)
+				DR += 10;
+			else if (GetDrakkinHeritage() == 5)
+				DR += 2;
 			break;
+		}
 		default:
 			DR = 15;
 	}
 	int c = GetClass();
+	// the monk one is part of base resist
+	if (c == MONK) {
+		int l = GetLevel();
+		if (l > 50)
+			DR += l - 50;
+	}
 	if (c == PALADIN) {
 		DR += 8;
 		int l = GetLevel();
@@ -1787,7 +1818,7 @@ int32	Client::CalcDR()
 			DR += l - 49;
 		}
 	}
-	else if (c == SHADOWKNIGHT) {
+	else if (c == SHADOWKNIGHT || c == BEASTLORD) {
 		DR += 4;
 		int l = GetLevel();
 		if (l > 49) {
@@ -1854,12 +1885,24 @@ int32	Client::CalcPR()
 			PR = 30;
 			break;
 		case DRAKKIN:
+		{
 			PR = 15;
+			if (GetDrakkinHeritage() == 3)
+				PR += 10;
+			else if (GetDrakkinHeritage() == 5)
+				PR += 2;
 			break;
+		}
 		default:
 			PR = 15;
 	}
 	int c = GetClass();
+	// this monk bonus is part of the base
+	if (c == MONK) {
+		int l = GetLevel();
+		if (l > 50)
+			PR += l - 50;
+	}
 	if (c == ROGUE) {
 		PR += 8;
 		int l = GetLevel();
@@ -1934,13 +1977,19 @@ int32	Client::CalcCR()
 			CR = 25;
 			break;
 		case DRAKKIN:
+		{
 			CR = 25;
+			if (GetDrakkinHeritage() == 4)
+				CR += 10;
+			else if (GetDrakkinHeritage() == 5)
+				CR += 2;
 			break;
+		}
 		default:
 			CR = 25;
 	}
 	int c = GetClass();
-	if (c == RANGER) {
+	if (c == RANGER || c == BEASTLORD) {
 		CR += 4;
 		int l = GetLevel();
 		if (l > 49) {
@@ -2091,7 +2140,7 @@ void Client::CalcMaxEndurance()
 int32 Client::CalcBaseEndurance()
 {
 	int32 base_end = 0;
-	if (GetClientVersion() >= ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
+	if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
 		double heroic_stats = (GetHeroicSTR() + GetHeroicSTA() + GetHeroicDEX() + GetHeroicAGI()) / 4.0f;
 		double stats = (GetSTR() + GetSTA() + GetDEX() + GetAGI()) / 4.0f;
 		if (stats > 201.0f) {
@@ -2156,12 +2205,12 @@ int Client::GetRawACNoShield(int &shield_ac) const
 {
 	int ac = itembonuses.AC + spellbonuses.AC + aabonuses.AC;
 	shield_ac = 0;
-	const ItemInst *inst = m_inv.GetItem(MainSecondary);
+	const ItemInst *inst = m_inv.GetItem(EQEmu::legacy::SlotSecondary);
 	if (inst) {
 		if (inst->GetItem()->ItemType == ItemTypeShield) {
 			ac -= inst->GetItem()->AC;
 			shield_ac = inst->GetItem()->AC;
-			for (uint8 i = AUG_BEGIN; i < EmuConstants::ITEM_COMMON_SIZE; i++) {
+			for (uint8 i = AUG_INDEX_BEGIN; i < EQEmu::legacy::ITEM_COMMON_SIZE; i++) {
 				if (inst->GetAugment(i)) {
 					ac -= inst->GetAugment(i)->GetItem()->AC;
 					shield_ac += inst->GetAugment(i)->GetItem()->AC;

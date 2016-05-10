@@ -69,7 +69,7 @@ void Object::HandleAugmentation(Client* user, const AugmentItem_Struct* in_augme
 
 				// Verify that no more than two items are in container to guarantee no inadvertant wipes.
 				uint8 itemsFound = 0;
-				for (uint8 i = MAIN_BEGIN; i < EmuConstants::MAP_WORLD_SIZE; i++)
+				for (uint8 i = SLOT_BEGIN; i < EQEmu::legacy::TYPE_WORLD_SIZE; i++)
 				{
 					const ItemInst* inst = container->GetItem(i);
 					if (inst)
@@ -166,25 +166,34 @@ void Object::HandleAugmentation(Client* user, const AugmentItem_Struct* in_augme
 	else
 	{
 		ItemInst *old_aug = nullptr;
-		const uint32 id = auged_with->GetID();
+		bool isSolvent = auged_with->GetItem()->ItemType == ItemUseTypes::ItemTypeAugmentationSolvent;
+		if (!isSolvent && auged_with->GetItem()->ItemType != ItemUseTypes::ItemTypeAugmentationDistiller)
+		{
+			Log.Out(Logs::General, Logs::Error, "Player tried to remove an augment without a solvent or distiller.");
+			user->Message(13, "Error: Missing an augmentation solvent or distiller for removing this augment.");
+
+			return;
+		}
+
 		ItemInst *aug = tobe_auged->GetAugment(in_augment->augment_slot);
-		if(aug) {
+		if (aug) {
+			if (!isSolvent && auged_with->GetItem()->ID != aug->GetItem()->AugDistiller)
+			{
+				Log.Out(Logs::General, Logs::Error, "Player tried to safely remove an augment with the wrong distiller (item %u vs expected %u).", auged_with->GetItem()->ID, aug->GetItem()->AugDistiller);
+				user->Message(13, "Error: Wrong augmentation distiller for safely removing this augment.");
+				return;
+			}
 			std::vector<EQEmu::Any> args;
 			args.push_back(aug);
 			parse->EventItem(EVENT_UNAUGMENT_ITEM, user, tobe_auged, nullptr, "", slot, &args);
 
 			args.assign(1, tobe_auged);
-			bool destroyed = false;
-			if(id == 40408 || id == 40409 || id == 40410) {
-				destroyed = true;
-			}
-
-			args.push_back(&destroyed);
+			args.push_back(&isSolvent);
 
 			parse->EventItem(EVENT_AUGMENT_REMOVE, user, aug, nullptr, "", slot, &args);
 		}
 
-		if(id == 40408 || id == 40409 || id == 40410)
+		if (isSolvent)
 			tobe_auged->DeleteAugment(in_augment->augment_slot);
 		else
 			old_aug = tobe_auged->RemoveAugment(in_augment->augment_slot);
@@ -213,7 +222,7 @@ void Object::HandleAugmentation(Client* user, const AugmentItem_Struct* in_augme
 		else
 		{
 			// Delete items in our inventory container...
-			for (uint8 i = MAIN_BEGIN; i < EmuConstants::MAP_WORLD_SIZE; i++)
+			for (uint8 i = SLOT_BEGIN; i < EQEmu::legacy::TYPE_WORLD_SIZE; i++)
 			{
 				const ItemInst* inst = container->GetItem(i);
 				if (inst)
@@ -255,7 +264,7 @@ void Object::HandleCombine(Client* user, const NewCombine_Struct* in_combine, Ob
 	uint32 some_id = 0;
 	bool worldcontainer=false;
 
-	if (in_combine->container_slot == legacy::SLOT_TRADESKILL) {
+	if (in_combine->container_slot == EQEmu::legacy::SLOT_TRADESKILL) {
 		if(!worldo) {
 			user->Message(13, "Error: Server is not aware of the tradeskill container you are attempting to use");
 			return;
@@ -288,7 +297,7 @@ void Object::HandleCombine(Client* user, const NewCombine_Struct* in_combine, Ob
 			const Item_Struct* new_weapon = inst->GetItem();
 			user->DeleteItemInInventory(Inventory::CalcSlotId(in_combine->container_slot, 0), 0, true);
 			container->Clear();
-			user->SummonItem(new_weapon->ID, inst->GetCharges(), inst->GetAugmentItemID(0), inst->GetAugmentItemID(1), inst->GetAugmentItemID(2), inst->GetAugmentItemID(3), inst->GetAugmentItemID(4), inst->GetAugmentItemID(5), inst->IsAttuned(), MainCursor, container->GetItem()->Icon, atoi(container->GetItem()->IDFile + 2));
+			user->SummonItem(new_weapon->ID, inst->GetCharges(), inst->GetAugmentItemID(0), inst->GetAugmentItemID(1), inst->GetAugmentItemID(2), inst->GetAugmentItemID(3), inst->GetAugmentItemID(4), inst->GetAugmentItemID(5), inst->IsAttuned(), EQEmu::legacy::SlotCursor, container->GetItem()->Icon, atoi(container->GetItem()->IDFile + 2));
 			user->Message_StringID(4, TRANSFORM_COMPLETE, inst->GetItem()->Name);
 			if (RuleB(Inventory, DeleteTransformationMold))
 				user->DeleteItemInInventory(in_combine->container_slot, 0, true);
@@ -308,7 +317,7 @@ void Object::HandleCombine(Client* user, const NewCombine_Struct* in_combine, Ob
 			const Item_Struct* new_weapon = inst->GetItem();
 			user->DeleteItemInInventory(Inventory::CalcSlotId(in_combine->container_slot, 0), 0, true);
 			container->Clear();
-			user->SummonItem(new_weapon->ID, inst->GetCharges(), inst->GetAugmentItemID(0), inst->GetAugmentItemID(1), inst->GetAugmentItemID(2), inst->GetAugmentItemID(3), inst->GetAugmentItemID(4), inst->GetAugmentItemID(5), inst->IsAttuned(), MainCursor, 0, 0);
+			user->SummonItem(new_weapon->ID, inst->GetCharges(), inst->GetAugmentItemID(0), inst->GetAugmentItemID(1), inst->GetAugmentItemID(2), inst->GetAugmentItemID(3), inst->GetAugmentItemID(4), inst->GetAugmentItemID(5), inst->IsAttuned(), EQEmu::legacy::SlotCursor, 0, 0);
 			user->Message_StringID(4, TRANSFORM_COMPLETE, inst->GetItem()->Name);
 		}
 		else if (inst) {
@@ -392,7 +401,7 @@ void Object::HandleCombine(Client* user, const NewCombine_Struct* in_combine, Ob
 		safe_delete(outapp);
 		database.DeleteWorldContainer(worldo->m_id, zone->GetZoneID());
 	} else{
-		for (uint8 i = MAIN_BEGIN; i < EmuConstants::MAP_WORLD_SIZE; i++) {
+		for (uint8 i = SLOT_BEGIN; i < EQEmu::legacy::TYPE_WORLD_SIZE; i++) {
 			const ItemInst* inst = container->GetItem(i);
 			if (inst) {
 				user->DeleteItemInInventory(Inventory::CalcSlotId(in_combine->container_slot,i),0,true);
@@ -671,7 +680,7 @@ SkillUseTypes Object::TypeToSkill(uint32 type)
 	return TradeskillUnknown;
 }
 
-void Client::TradeskillSearchResults(const std::string query, unsigned long objtype, unsigned long someid) {
+void Client::TradeskillSearchResults(const std::string &query, unsigned long objtype, unsigned long someid) {
 
     auto results = database.QueryDatabase(query);
 	if (!results.Success()) {
@@ -1218,7 +1227,7 @@ bool ZoneDatabase::GetTradeRecipe(const ItemInst* container, uint8 c_type, uint3
 	for (auto row = results.begin(); row != results.end(); ++row) {
         int ccnt = 0;
 
-        for(int x = MAIN_BEGIN; x < EmuConstants::MAP_WORLD_SIZE; x++) {
+		for (int x = SLOT_BEGIN; x < EQEmu::legacy::TYPE_WORLD_SIZE; x++) {
             const ItemInst* inst = container->GetItem(x);
             if(!inst)
                 continue;

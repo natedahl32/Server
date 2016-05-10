@@ -259,7 +259,7 @@ bool Mob::CastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 		bitmask = bitmask << (CastToClient()->GetClass() - 1);
 		if( itm && itm->GetItem()->Classes != 65535 ) {
 			if ((itm->GetItem()->Click.Type == ET_EquipClick) && !(itm->GetItem()->Classes & bitmask)) {
-				if (CastToClient()->GetClientVersion() < ClientVersion::SoF) {
+				if (CastToClient()->ClientVersion() < EQEmu::versions::ClientVersion::SoF) {
 					// They are casting a spell from an item that requires equipping but shouldn't let them equip it
 					Log.Out(Logs::General, Logs::Error, "HACKER: %s (account: %s) attempted to click an equip-only effect on item %s (id: %d) which they shouldn't be able to equip!",
 						CastToClient()->GetCleanName(), CastToClient()->AccountName(), itm->GetItem()->Name, itm->GetItem()->ID);
@@ -271,14 +271,14 @@ bool Mob::CastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 				return(false);
 			}
 			if ((itm->GetItem()->Click.Type == ET_ClickEffect2) && !(itm->GetItem()->Classes & bitmask)) {
-				if (CastToClient()->GetClientVersion() < ClientVersion::SoF) {
+				if (CastToClient()->ClientVersion() < EQEmu::versions::ClientVersion::SoF) {
 					// They are casting a spell from an item that they don't meet the race/class requirements to cast
 					Log.Out(Logs::General, Logs::Error, "HACKER: %s (account: %s) attempted to click a race/class restricted effect on item %s (id: %d) which they shouldn't be able to click!",
 						CastToClient()->GetCleanName(), CastToClient()->AccountName(), itm->GetItem()->Name, itm->GetItem()->ID);
 					database.SetHackerFlag(CastToClient()->AccountName(), CastToClient()->GetCleanName(), "Clicking race/class restricted item with an invalid class");
 				}
 				else {
-					if (CastToClient()->GetClientVersion() >= ClientVersion::RoF)
+					if (CastToClient()->ClientVersion() >= EQEmu::versions::ClientVersion::RoF)
 					{
 						// Line 181 in eqstr_us.txt was changed in RoF+
 						Message(15, "Your race, class, or deity cannot use this item.");
@@ -291,8 +291,8 @@ bool Mob::CastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 				return(false);
 			}
 		}
-		if( itm && (itm->GetItem()->Click.Type == ET_EquipClick) && !(item_slot <= MainAmmo || item_slot == MainPowerSource) ){
-			if (CastToClient()->GetClientVersion() < ClientVersion::SoF) {
+		if (itm && (itm->GetItem()->Click.Type == ET_EquipClick) && !(item_slot <= EQEmu::legacy::SlotAmmo || item_slot == EQEmu::legacy::SlotPowerSource)){
+			if (CastToClient()->ClientVersion() < EQEmu::versions::ClientVersion::SoF) {
 				// They are attempting to cast a must equip clicky without having it equipped
 				Log.Out(Logs::General, Logs::Error, "HACKER: %s (account: %s) attempted to click an equip-only effect on item %s (id: %d) without equiping it!", CastToClient()->GetCleanName(), CastToClient()->AccountName(), itm->GetItem()->Name, itm->GetItem()->ID);
 				database.SetHackerFlag(CastToClient()->AccountName(), CastToClient()->GetCleanName(), "Clicking equip-only item without equiping it");
@@ -1206,7 +1206,7 @@ void Mob::CastedSpellFinished(uint16 spell_id, uint32 target_id, uint16 slot,
 			if (inst == nullptr)
 				break;
 
-			for (int r = AUG_BEGIN; r < EmuConstants::ITEM_COMMON_SIZE; r++) {
+			for (int r = AUG_INDEX_BEGIN; r < EQEmu::legacy::ITEM_COMMON_SIZE; r++) {
 				const ItemInst* aug_i = inst->GetAugment(r);
 
 				if (!aug_i)
@@ -1268,6 +1268,14 @@ void Mob::CastedSpellFinished(uint16 spell_id, uint32 target_id, uint16 slot,
 		}
 	}
 
+	// we're done casting, now try to apply the spell
+	if( !SpellFinished(spell_id, spell_target, slot, mana_used, inventory_slot, resist_adjust) )
+	{
+		Log.Out(Logs::Detail, Logs::Spells, "Casting of %d canceled: SpellFinished returned false.", spell_id);
+		InterruptSpell();
+		return;
+	}
+
 	if(IsClient()) {
 		CheckNumHitsRemaining(NumHit::MatchingSpells);
 		TrySympatheticProc(target, spell_id);
@@ -1276,14 +1284,6 @@ void Mob::CastedSpellFinished(uint16 spell_id, uint32 target_id, uint16 slot,
 	TryTwincast(this, target, spell_id);
 
 	TryTriggerOnCast(spell_id, 0);
-
-	// we're done casting, now try to apply the spell
-	if( !SpellFinished(spell_id, spell_target, slot, mana_used, inventory_slot, resist_adjust) )
-	{
-		Log.Out(Logs::Detail, Logs::Spells, "Casting of %d canceled: SpellFinished returned false.", spell_id);
-		InterruptSpell();
-		return;
-	}
 
 	if(DeleteChargeFromSlot >= 0)
 		CastToClient()->DeleteItemInInventory(DeleteChargeFromSlot, 1, true);
@@ -1732,7 +1732,10 @@ bool Mob::DetermineSpellTargets(uint16 spell_id, Mob *&spell_target, Mob *&ae_ce
 						}
 						else if(IsRaidGrouped())
 						{
-							group_id_caster = (GetRaid()->GetGroup(CastToClient()) == 0xFFFF) ? 0 : (GetRaid()->GetGroup(CastToClient()) + 1);
+							if (Raid* raid = GetRaid()) {
+								uint32 group_id = raid->GetGroup(CastToClient());
+								group_id_caster = (group_id == 0xFFFFFFFF) ? 0 : (group_id + 1);
+							}
 						}
 					}
 					else if(IsPet())
@@ -1744,7 +1747,10 @@ bool Mob::DetermineSpellTargets(uint16 spell_id, Mob *&spell_target, Mob *&ae_ce
 						}
 						else if(owner->IsRaidGrouped())
 						{
-							group_id_caster = (owner->GetRaid()->GetGroup(CastToClient()) == 0xFFFF) ? 0 : (owner->GetRaid()->GetGroup(CastToClient()) + 1);
+							if (Raid* raid = owner->GetRaid()) {
+								uint32 group_id = raid->GetGroup(owner->CastToClient());
+								group_id_caster = (group_id == 0xFFFFFFFF) ? 0 : (group_id + 1);
+							}
 						}
 					}
 #ifdef BOTS
@@ -1770,7 +1776,10 @@ bool Mob::DetermineSpellTargets(uint16 spell_id, Mob *&spell_target, Mob *&ae_ce
 						}
 						else if(spell_target->IsRaidGrouped())
 						{
-							group_id_target = (spell_target->GetRaid()->GetGroup(CastToClient()) == 0xFFFF) ? 0 : (spell_target->GetRaid()->GetGroup(CastToClient()) + 1);
+							if (Raid* raid = spell_target->GetRaid()) {
+								uint32 group_id = raid->GetGroup(spell_target->CastToClient());
+								group_id_target = (group_id == 0xFFFFFFFF) ? 0 : (group_id + 1);
+							}
 						}
 					}
 					else if(spell_target->IsPet())
@@ -1782,7 +1791,10 @@ bool Mob::DetermineSpellTargets(uint16 spell_id, Mob *&spell_target, Mob *&ae_ce
 						}
 						else if(owner->IsRaidGrouped())
 						{
-							group_id_target = (owner->GetRaid()->GetGroup(CastToClient()) == 0xFFFF) ? 0 : (owner->GetRaid()->GetGroup(CastToClient()) + 1);
+							if (Raid* raid = owner->GetRaid()) {
+								uint32 group_id = raid->GetGroup(owner->CastToClient());
+								group_id_target = (group_id == 0xFFFFFFFF) ? 0 : (group_id + 1);
+							}
 						}
 					}
 #ifdef BOTS
@@ -1999,7 +2011,7 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, uint16 slot, uint16 
 	}
 
 	//range check our target, if we have one and it is not us
-	float range = spells[spell_id].range;
+	float range = spells[spell_id].range + GetRangeDistTargetSizeMod(spell_target);
 	if(IsClient() && CastToClient()->TGB() && IsTGBCompatibleSpell(spell_id) && IsGroupSpell(spell_id))
 		range = spells[spell_id].aoerange;
 
@@ -3140,7 +3152,7 @@ int Mob::AddBuff(Mob *caster, uint16 spell_id, int duration, int32 level_overrid
 				Log.Out(Logs::Detail, Logs::Spells, "Adding buff %d will overwrite spell %d in slot %d with caster level %d",
 						spell_id, curbuf.spellid, buffslot, curbuf.casterlevel);
 				// If this is the first buff it would override, use its slot
-				if (!will_overwrite)
+				if (!will_overwrite && !IsDisciplineBuff(spell_id))
 					emptyslot = buffslot;
 				will_overwrite = true;
 				overwrite_slots.push_back(buffslot);
@@ -3190,7 +3202,7 @@ int Mob::AddBuff(Mob *caster, uint16 spell_id, int duration, int32 level_overrid
 
 			// if we hadn't found a free slot before, or if this is earlier
 			// we use it
-			if (emptyslot == -1 || *cur < emptyslot)
+			if (emptyslot == -1 || (*cur < emptyslot && !IsDisciplineBuff(spell_id)))
 				emptyslot = *cur;
 		}
 	}
@@ -3234,7 +3246,7 @@ int Mob::AddBuff(Mob *caster, uint16 spell_id, int duration, int32 level_overrid
 	{
 		EQApplicationPacket *outapp = MakeBuffsPacket();
 
-		entity_list.QueueClientsByTarget(this, outapp, false, nullptr, true, false, BIT_SoDAndLater);
+		entity_list.QueueClientsByTarget(this, outapp, false, nullptr, true, false, EQEmu::versions::bit_SoDAndLater);
 
 		if(IsClient() && GetTarget() == this)
 			CastToClient()->QueuePacket(outapp);
@@ -3244,7 +3256,7 @@ int Mob::AddBuff(Mob *caster, uint16 spell_id, int duration, int32 level_overrid
 
 	if (IsNPC()) {
 		EQApplicationPacket *outapp = MakeBuffsPacket();
-		entity_list.QueueClientsByTarget(this, outapp, false, nullptr, true, false, BIT_SoDAndLater, true);
+		entity_list.QueueClientsByTarget(this, outapp, false, nullptr, true, false, EQEmu::versions::bit_SoDAndLater, true);
 		safe_delete(outapp);
 	}
 
@@ -4910,6 +4922,16 @@ void Client::UnmemSpell(int slot, bool update_client)
 	}
 }
 
+void Client::UnmemSpellBySpellID(int32 spell_id)
+{
+	for(int i = 0; i < MAX_PP_MEMSPELL; i++) {
+		if(m_pp.mem_spells[i] == spell_id) {
+			UnmemSpell(i, true);
+			break;
+		}
+	}
+}
+
 void Client::UnmemSpellAll(bool update_client)
 {
 	int i;
@@ -5300,12 +5322,26 @@ void Client::SendBuffDurationPacket(Buffs_Struct &buff)
 	EQApplicationPacket* outapp;
 	outapp = new EQApplicationPacket(OP_Buff, sizeof(SpellBuffFade_Struct));
 	SpellBuffFade_Struct* sbf = (SpellBuffFade_Struct*) outapp->pBuffer;
+	int index;
 
 	sbf->entityid = GetID();
 	sbf->slot = 2;
 	sbf->spellid = buff.spellid;
 	sbf->slotid = 0;
 	sbf->level = buff.casterlevel > 0 ? buff.casterlevel : GetLevel();
+
+	// We really don't know what to send as sbf->effect.
+	// The code used to send level (and still does for cases we don't know)
+	//
+	// The fixes below address known issues with sending level in this field.
+	// Typically, when the packet is sent, or when the user
+	// next does something on the UI that causes an update (like opening a
+	// pack), the stats updated by the spell in question get corrupted.
+	// 
+	// The values were determined by trial and error.  I could not find a 
+	// pattern or find a field in spells_new that would work.
+
+	sbf->effect=sbf->level;
 
 	if (IsEffectInSpell(buff.spellid, SE_TotalHP))
 	{
@@ -5317,25 +5353,45 @@ void Client::SendBuffDurationPacket(Buffs_Struct &buff)
 	else if (IsEffectInSpell(buff.spellid, SE_CurrentHP))
 	{
 		// This is mostly a problem when we try and update duration on a
-		// dot or a hp->mana conversion.  Zero cancels the effect, any
-		// other value has the GUI doing that value at the same time server
-		// is doing theirs.  This makes the two match.
-		int index = GetSpellEffectIndex(buff.spellid, SE_CurrentHP);
+		// dot or a hp->mana conversion.  Zero cancels the effect
+		// Sending teh actual change again seems to work.
+		index = GetSpellEffectIndex(buff.spellid, SE_CurrentHP);
 		sbf->effect = abs(spells[buff.spellid].base[index]);
 	}
 	else if (IsEffectInSpell(buff.spellid, SE_SeeInvis))
 	{
-		// Wish I knew what this sbf->effect field was trying to tell
-		// the client.  10 seems to not break SeeInvis spells.  Level,
+		// 10 seems to not break SeeInvis spells.  Level,
 		// which is what the old client sends breaks the client at at 
 		// least level 9, maybe more.
 		sbf->effect = 10;
 	}
-	else
+	else if (IsEffectInSpell(buff.spellid, SE_ArmorClass) ||
+			 IsEffectInSpell(buff.spellid, SE_ResistFire) ||
+			 IsEffectInSpell(buff.spellid, SE_ResistCold) ||
+			 IsEffectInSpell(buff.spellid, SE_ResistPoison) ||
+			 IsEffectInSpell(buff.spellid, SE_ResistDisease) ||
+			 IsEffectInSpell(buff.spellid, SE_ResistMagic) ||
+			 IsEffectInSpell(buff.spellid, SE_STR) ||
+			 IsEffectInSpell(buff.spellid, SE_STA) ||
+			 IsEffectInSpell(buff.spellid, SE_DEX) ||
+			 IsEffectInSpell(buff.spellid, SE_WIS) ||
+			 IsEffectInSpell(buff.spellid, SE_INT) ||
+			 IsEffectInSpell(buff.spellid, SE_AGI))
 	{
-		// Default to what old code did until we find a better fix for
-		// other spell lines.
-		sbf->effect=sbf->level;
+		// This seems to work.  Previosly stats got corrupted when sending
+		// level.
+		sbf->effect = 46;
+	}
+	else if (IsEffectInSpell(buff.spellid, SE_CHA))
+	{
+		index = GetSpellEffectIndex(buff.spellid, SE_CHA);
+		sbf->effect = abs(spells[buff.spellid].base[index]);
+		// Only use this valie if its not a spacer.
+		if (sbf->effect != 0)
+		{
+			// Same as other stats, need this to prevent a double update.
+			sbf->effect = 46;
+		}
 	}
 
 	sbf->bufffade = 0;
@@ -5347,7 +5403,7 @@ void Client::SendBuffDurationPacket(Buffs_Struct &buff)
 void Client::SendBuffNumHitPacket(Buffs_Struct &buff, int slot)
 {
 	// UF+ use this packet
-	if (GetClientVersion() < ClientVersion::UF)
+	if (ClientVersion() < EQEmu::versions::ClientVersion::UF)
 		return;
 	EQApplicationPacket *outapp;
 	outapp = new EQApplicationPacket(OP_BuffCreate, sizeof(BuffIcon_Struct) + sizeof(BuffIconEntry_Struct));
@@ -5401,7 +5457,7 @@ void Mob::SendBuffsToClient(Client *c)
 	if(!c)
 		return;
 
-	if(c->GetClientVersionBit() & BIT_SoDAndLater)
+	if (c->ClientVersionBit() & EQEmu::versions::bit_SoDAndLater)
 	{
 		EQApplicationPacket *outapp = MakeBuffsPacket();
 		c->FastQueuePacket(&outapp);

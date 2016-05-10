@@ -29,22 +29,24 @@ struct WorldObjectsSent_Struct {
 };
 
 // New for RoF - Size: 12
-struct ItemSlotStruct {
-/*000*/	int16	SlotType;	// Worn and Normal inventory = 0, Bank = 1, Shared Bank = 2, Delete Item = -1
+struct InventorySlot_Struct
+{
+/*000*/	int16	Type;		// Worn and Normal inventory = 0, Bank = 1, Shared Bank = 2, Delete Item = -1
 /*002*/	int16	Unknown02;
-/*004*/	int16	MainSlot;
-/*006*/	int16	SubSlot;
-/*008*/	int16	AugSlot;	// Guessing - Seen 0xffff
+/*004*/	int16	Slot;
+/*006*/	int16	SubIndex;
+/*008*/	int16	AugIndex;	// Guessing - Seen 0xffff
 /*010*/	int16	Unknown01;	// Normally 0 - Seen 13262 when deleting an item, but didn't match item ID
 /*012*/
 };
 
 // New for RoF - Used for Merchant_Purchase_Struct
 // Can't sellfrom other than main inventory so Slot Type is not needed.
-struct MainInvItemSlotStruct {
-/*000*/	int16	MainSlot;
-/*002*/	int16	SubSlot;
-/*004*/	int16	AugSlot;
+struct TypelessInventorySlot_Struct
+{
+/*000*/	int16	Slot;
+/*002*/	int16	SubIndex;
+/*004*/	int16	AugIndex;
 /*006*/	int16	Unknown01;
 /*008*/
 };
@@ -645,7 +647,7 @@ struct CastSpell_Struct
 {
 /*00*/	uint32	slot;
 /*04*/	uint32	spell_id;
-/*08*/	ItemSlotStruct inventoryslot;  // slot for clicky item, Seen unknown of 131 = normal cast
+/*08*/	InventorySlot_Struct inventory_slot;  // slot for clicky item, Seen unknown of 131 = normal cast
 /*20*/	uint32	target_id;
 /*24*/	uint32	cs_unknown[2];
 /*32*/	float	y_pos;
@@ -1777,7 +1779,7 @@ struct BulkItemPacket_Struct
 
 struct Consume_Struct
 {
-/*000*/ ItemSlotStruct	slot;
+/*000*/ InventorySlot_Struct	inventory_slot;
 /*012*/ uint32	auto_consumed;	// 0xffffffff when auto eating e7030000 when right click
 /*016*/ uint32	type;			// 0x01=Food 0x02=Water
 /*020*/ uint32	c_unknown1;		// Seen 2
@@ -1809,17 +1811,19 @@ struct ItemProperties_Struct {
 /*008*/
 };
 
-struct DeleteItem_Struct {
-/*0000*/ ItemSlotStruct	from_slot;
-/*0012*/ ItemSlotStruct	to_slot;
-/*0024*/ uint32			number_in_stack;
+struct DeleteItem_Struct
+{
+/*0000*/ InventorySlot_Struct	from_slot;
+/*0012*/ InventorySlot_Struct	to_slot;
+/*0024*/ uint32		number_in_stack;
 /*0028*/
 };
 
-struct MoveItem_Struct {
-/*0000*/ ItemSlotStruct	from_slot;
-/*0012*/ ItemSlotStruct	to_slot;
-/*0024*/ uint32			number_in_stack;
+struct MoveItem_Struct
+{
+/*0000*/ InventorySlot_Struct	from_slot;
+/*0012*/ InventorySlot_Struct	to_slot;
+/*0024*/ uint32		number_in_stack;
 /*0028*/
 };
 
@@ -1887,6 +1891,114 @@ struct GuildsList_Struct {
 struct GuildUpdate_Struct {
 	uint32	guildID;
 	GuildsListEntry_Struct entry;
+};
+
+struct GuildBankAck_Struct
+{
+/*00*/	uint32	Action;	//	10
+/*04*/	uint32	Unknown04;
+/*08*/	uint32	Unknown08;
+};
+
+struct GuildBankDepositAck_Struct
+{
+/*00*/	uint32	Action;	//	10
+/*04*/	uint32	Unknown04;
+/*08*/	uint32	Unknown08;
+/*08*/	uint32	Fail;	//1 = Fail, 0 = Success
+};
+
+struct GuildBankPromote_Struct
+{
+/*00*/	uint32	Action;	// 3
+/*04*/	uint32	Unknown04;
+/*08*/	uint32	Unknown08;
+/*12*/	uint32	Slot;
+/*16*/	uint32	Slot2;	// Always appears to be the same as Slot for Action code 3
+/*20*/  uint32  unknown20;
+};
+
+struct GuildBankPermissions_Struct
+{
+/*00*/	uint32	Action;	// 6
+/*04*/	uint32	Unknown04;
+/*08*/	uint32	Unknown08;
+/*08*/	uint16	SlotID;
+/*10*/	uint16	Unknown10; // Saw 1, probably indicating it is the main area rather than deposits
+/*12*/	uint32	ItemID;
+/*16*/	uint32	Permissions;
+/*20*/	char	MemberName[64];
+};
+
+struct GuildBankViewItem_Struct
+{
+/*00*/	uint32	Action;
+/*04*/	uint32	Unknown04;
+/*08*/	uint32	Unknown08;
+/*08*/	uint16	SlotID;	// 0 = Deposit area, 1 = Main area
+/*10*/	uint16	Area;
+/*12*/	uint32	Unknown12;
+/*16*/	uint32	Unknown16;
+};
+
+struct GuildBankWithdrawItem_Struct
+{
+/*00*/	uint32	Action;
+/*04*/	uint32	Unknown04;
+/*08*/	uint32	Unknown08;
+/*08*/	uint16	SlotID;
+/*10*/	uint16	Area;
+/*12*/	uint32	Unknown12;
+/*16*/	uint32	Quantity;
+/*20*/
+};
+
+struct GuildBankItemUpdate_Struct
+{
+	void Init(uint32 inAction, uint32 inUnknown004, uint16 inSlotID, uint16 inArea, uint16 inUnknown012, uint32 inItemID, uint32 inIcon, uint32 inQuantity,
+			uint32 inPermissions, uint32 inAllowMerge, bool inUseable)
+	{
+		Action = inAction;
+		Unknown004 = inUnknown004;
+		SlotID = inSlotID;
+		Area = inArea;
+		Unknown012 = inUnknown012;
+		ItemID = inItemID;
+		Icon = inIcon;
+		Quantity = inQuantity;
+		Permissions = inPermissions;
+		AllowMerge = inAllowMerge;
+		Useable = inUseable;
+		ItemName[0] = '\0';
+		Donator[0] = '\0';
+		WhoFor[0] = '\0';
+	};
+
+/*000*/	uint32	Action;
+/*004*/	uint32	Unknown004;
+/*008*/	uint32	Unknown08;
+/*012*/	uint16	SlotID;
+/*014*/	uint16	Area;
+/*016*/	uint32	Unknown012;
+/*020*/	uint32	ItemID;
+/*024*/	uint32	Icon;
+/*028*/	uint32	Quantity;
+/*032*/	uint32	Permissions;
+/*036*/	uint8	AllowMerge;
+/*037*/	uint8	Useable;	// Used in conjunction with the Public-if-useable permission.
+/*038*/	char	ItemName[64];
+/*102*/	char	Donator[64];
+/*166*/ char	WhoFor[64];
+/*230*/	uint16	Unknown226;
+};
+
+struct GuildBankClear_Struct
+{
+/*00*/	uint32	Action;
+/*04*/	uint32	Unknown04;
+/*08*/	uint32	Unknown08;
+/*12*/	uint32	DepositAreaCount;
+/*16*/	uint32	MainAreaCount;
 };
 
 /*
@@ -2144,7 +2256,7 @@ struct Merchant_Sell_Struct {
 
 struct Merchant_Purchase_Struct {
 /*000*/	uint32	npcid;			// Merchant NPC's entity id
-/*004*/	MainInvItemSlotStruct	itemslot;
+/*004*/	TypelessInventorySlot_Struct	inventory_slot;
 /*012*/	uint32	quantity;
 /*016*/	uint32	price;
 /*020*/
@@ -2202,9 +2314,10 @@ struct AltCurrencyUpdate_Struct {
 
 //Client -> Server
 //When an item is selected while the alt currency merchant window is open
-struct AltCurrencySelectItem_Struct {
+struct AltCurrencySelectItem_Struct
+{
 /*000*/ uint32 merchant_entity_id;
-/*004*/ MainInvItemSlotStruct slot_id;
+/*004*/ TypelessInventorySlot_Struct inventory_slot;
 /*008*/ uint32 unknown008;
 /*012*/ uint32 unknown012;
 /*016*/ uint32 unknown016;
@@ -2261,7 +2374,7 @@ struct AltCurrencyReclaim_Struct {
 
 struct AltCurrencySellItem_Struct {
 /*000*/ uint32 merchant_entity_id;
-/*004*/ MainInvItemSlotStruct slot_id;
+/*004*/ TypelessInventorySlot_Struct inventory_slot;
 /*008*/ uint32 charges;
 /*012*/ uint32 cost;
 };
@@ -2276,7 +2389,7 @@ struct Adventure_Purchase_Struct {
 struct Adventure_Sell_Struct {
 /*000*/	uint32	unknown000;	//0x01 - Stack Size/Charges?
 /*004*/	uint32	npcid;
-/*008*/ MainInvItemSlotStruct slot;
+/*008*/ TypelessInventorySlot_Struct inventory_slot;
 /*016*/	uint32	charges;
 /*020*/	uint32	sell_price;
 /*024*/
@@ -2622,9 +2735,9 @@ struct Stun_Struct { // 8 bytes total
 struct AugmentItem_Struct {
 /*00*/	uint32	dest_inst_id;			// The unique serial number for the item instance that is being augmented
 /*04*/	uint32	container_index;				// Seen 0
-/*08*/	ItemSlotStruct container_slot;	// Slot of the item being augmented
+/*08*/	InventorySlot_Struct container_slot;	// Slot of the item being augmented
 /*20*/	uint32	augment_index;				// Seen 0
-/*24*/	ItemSlotStruct augment_slot;	// Slot of the distiller to use (if one applies)
+/*24*/	InventorySlot_Struct augment_slot;	// Slot of the distiller to use (if one applies)
 /*36*/	int32	augment_action;			// Guessed - 0 = augment, 1 = remove with distiller, 3 = delete aug
 /*36*/	//int32	augment_slot;
 /*40*/
@@ -2765,7 +2878,8 @@ struct Object_Struct {
 /*00*/	uint32	drop_id;			// Unique object id for zone
 /*00*/	uint32	unknown024;			// 53 9e f9 7e - same for all objects in the zone?
 /*00*/	float	heading;			// heading
-/*00*/	float	unknown032[2];		// 00 00 00 00 00 00 00 00
+/*00*/	float	x_tilt;				//Tilt entire object on X axis
+/*00*/	float	y_tilt;				//Tilt entire object on Y axis
 /*00*/	float	size;				// Size - default 1
 /*00*/	float	z;					// z coord
 /*00*/	float	x;					// x coord
@@ -3583,7 +3697,7 @@ struct TributeInfo_Struct {
 
 struct TributeItem_Struct
 {
-/*00*/	ItemSlotStruct	slot;
+/*00*/	InventorySlot_Struct	inventory_slot;
 /*12*/	uint32	quantity;
 /*16*/	uint32	tribute_master_id;
 /*20*/	int32	tribute_points;
@@ -3620,9 +3734,10 @@ struct Split_Struct
 ** Used In: OP_TradeSkillCombine
 ** Last Updated: 01-05-2013
 */
-struct NewCombine_Struct {
-/*00*/	ItemSlotStruct container_slot;
-/*12*/	ItemSlotStruct guildtribute_slot;	// Slot type is 8? (MapGuildTribute = 8)
+struct NewCombine_Struct
+{
+/*00*/	InventorySlot_Struct container_slot;
+/*12*/	InventorySlot_Struct guildtribute_slot;	// Slot type is 8? (MapGuildTribute = 8)
 /*24*/
 };
 
@@ -3658,11 +3773,12 @@ struct RecipeReply_Struct {
 };
 
 //received and sent back as an ACK with different reply_code
-struct RecipeAutoCombine_Struct {
+struct RecipeAutoCombine_Struct
+{
 /*00*/	uint32 object_type;
 /*04*/	uint32 some_id;
-/*08*/	ItemSlotStruct container_slot;		//echoed in reply - Was uint32 unknown1
-/*20*/	ItemSlotStruct unknown_slot;		//echoed in reply
+/*08*/	InventorySlot_Struct container_slot;		//echoed in reply - Was uint32 unknown1
+/*20*/	InventorySlot_Struct unknown_slot;		//echoed in reply
 /*32*/	uint32 recipe_id;
 /*36*/	uint32 reply_code;
 /*40*/
@@ -4377,19 +4493,22 @@ struct ExpansionInfo_Struct {
 /*064*/	uint32	Expansions;
 };
 
-struct ApplyPoison_Struct {
-	MainInvItemSlotStruct inventorySlot;
+struct ApplyPoison_Struct
+{
+	TypelessInventorySlot_Struct inventory_slot;
 	uint32 success;
 };
 
-struct ItemVerifyRequest_Struct {
-/*000*/	ItemSlotStruct slot;
+struct ItemVerifyRequest_Struct
+{
+/*000*/	InventorySlot_Struct inventory_slot;
 /*012*/	uint32	target;		// Target Entity ID
 /*016*/
 };
 
-struct ItemVerifyReply_Struct {
-/*000*/	ItemSlotStruct slot;
+struct ItemVerifyReply_Struct
+{
+/*000*/	InventorySlot_Struct inventory_slot;
 /*012*/	uint32	spell;		// Spell ID to cast if different than item effect
 /*016*/	uint32	target;		// Target Entity ID
 /*020*/
@@ -4623,7 +4742,7 @@ struct ClickEffectStruct
 
 struct ProcEffectStruct
 {
-	uint32 effect;
+	int32 effect;
 	uint8 level2;
 	uint32 type;
 	uint8 level;
@@ -4638,7 +4757,7 @@ struct ProcEffectStruct
 
 struct WornEffectStruct //worn, focus and scroll effect
 {
-	uint32 effect;
+	int32 effect;
 	uint8 level2;
 	uint32 type;
 	uint8 level;

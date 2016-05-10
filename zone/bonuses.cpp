@@ -144,35 +144,36 @@ void Client::CalcItemBonuses(StatBonuses* newbon) {
 	SetTwoHanderEquipped(false);
 
 	unsigned int i;
-	//should not include 21 (SLOT_AMMO)
-	for (i = MainCharm; i < MainAmmo; i++) {
+	// Update: MainAmmo should only calc skill mods (TODO: Check for other cases)
+	for (i = EQEmu::legacy::SlotCharm; i <= EQEmu::legacy::SlotAmmo; i++) {
 		const ItemInst* inst = m_inv[i];
 		if(inst == 0)
 			continue;
-		AddItemBonuses(inst, newbon);
+		AddItemBonuses(inst, newbon, false, false, 0, (i == EQEmu::legacy::SlotAmmo));
 
 		//These are given special flags due to how often they are checked for various spell effects.
 		const Item_Struct *item = inst->GetItem();
-		if (i == MainSecondary && (item && item->ItemType == ItemTypeShield))
+		if (i == EQEmu::legacy::SlotSecondary && (item && item->ItemType == ItemTypeShield))
 			SetShieldEquiped(true);
-		else if (i == MainPrimary && (item && item->ItemType == ItemType2HBlunt)) {
+		else if (i == EQEmu::legacy::SlotPrimary && (item && item->ItemType == ItemType2HBlunt)) {
 			SetTwoHandBluntEquiped(true);
 			SetTwoHanderEquipped(true);
-		} else if (i == MainPrimary && (item && (item->ItemType == ItemType2HSlash || item->ItemType == ItemType2HPiercing)))
+		}
+		else if (i == EQEmu::legacy::SlotPrimary && (item && (item->ItemType == ItemType2HSlash || item->ItemType == ItemType2HPiercing)))
 			SetTwoHanderEquipped(true);
 	}
 
 	//Power Source Slot
-	if (GetClientVersion() >= ClientVersion::SoF)
+	if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF)
 	{
-		const ItemInst* inst = m_inv[MainPowerSource];
+		const ItemInst* inst = m_inv[EQEmu::legacy::SlotPowerSource];
 		if(inst)
 			AddItemBonuses(inst, newbon);
 	}
 
 	//tribute items
-	for (i = 0; i < EmuConstants::TRIBUTE_SIZE; i++) {
-		const ItemInst* inst = m_inv[EmuConstants::TRIBUTE_BEGIN + i];
+	for (i = 0; i < EQEmu::legacy::TRIBUTE_SIZE; i++) {
+		const ItemInst* inst = m_inv[EQEmu::legacy::TRIBUTE_BEGIN + i];
 		if(inst == 0)
 			continue;
 		AddItemBonuses(inst, newbon, false, true);
@@ -180,7 +181,7 @@ void Client::CalcItemBonuses(StatBonuses* newbon) {
 
 	//Optional ability to have worn effects calculate as an addititive bonus instead of highest value
 	if (RuleI(Spells, AdditiveBonusWornType) && RuleI(Spells, AdditiveBonusWornType) != ET_WornEffect){
-		for (i = MainCharm; i < MainAmmo; i++) {
+		for (i = EQEmu::legacy::SlotCharm; i < EQEmu::legacy::SlotAmmo; i++) {
 			const ItemInst* inst = m_inv[i];
 			if(inst == 0)
 				continue;
@@ -207,353 +208,328 @@ void Client::ProcessItemCaps()
 	itembonuses.ATK = std::min(itembonuses.ATK, CalcItemATKCap());
 }
 
-void Client::AddItemBonuses(const ItemInst *inst, StatBonuses* newbon, bool isAug, bool isTribute) {
-	if(!inst || !inst->IsType(ItemClassCommon))
-	{
+void Client::AddItemBonuses(const ItemInst *inst, StatBonuses *newbon, bool isAug, bool isTribute, int rec_override, bool ammo_slot_item)
+{
+	if (!inst || !inst->IsType(ItemClassCommon)) {
 		return;
 	}
 
-	if(inst->GetAugmentType()==0 && isAug == true)
-	{
+	if (inst->GetAugmentType() == 0 && isAug == true) {
 		return;
 	}
 
 	const Item_Struct *item = inst->GetItem();
 
-	if(!isTribute && !inst->IsEquipable(GetBaseRace(),GetClass()))
-	{
-		if(item->ItemType != ItemTypeFood && item->ItemType != ItemTypeDrink)
+	if (!isTribute && !inst->IsEquipable(GetBaseRace(), GetClass())) {
+		if (item->ItemType != ItemTypeFood && item->ItemType != ItemTypeDrink)
 			return;
 	}
 
-	if(GetLevel() < item->ReqLevel)
-	{
+	if (GetLevel() < inst->GetItemRequiredLevel(true)) {
 		return;
 	}
+	
+	// So there isn't a very nice way to get the real rec level from the aug's inst, so we just pass it in, only
+	// used for augs
+	auto rec_level = isAug ? rec_override : inst->GetItemRecommendedLevel(true);
 
-	if(GetLevel() >= item->RecLevel)
-	{
-		newbon->AC += item->AC;
-		newbon->HP += item->HP;
-		newbon->Mana += item->Mana;
-		newbon->Endurance += item->Endur;
-		newbon->ATK += item->Attack;
-		newbon->STR += (item->AStr + item->HeroicStr);
-		newbon->STA += (item->ASta + item->HeroicSta);
-		newbon->DEX += (item->ADex + item->HeroicDex);
-		newbon->AGI += (item->AAgi + item->HeroicAgi);
-		newbon->INT += (item->AInt + item->HeroicInt);
-		newbon->WIS += (item->AWis + item->HeroicWis);
-		newbon->CHA += (item->ACha + item->HeroicCha);
+	if (!ammo_slot_item) {
+		if (GetLevel() >= rec_level) {
+			newbon->AC += item->AC;
+			newbon->HP += item->HP;
+			newbon->Mana += item->Mana;
+			newbon->Endurance += item->Endur;
+			newbon->ATK += item->Attack;
+			newbon->STR += (item->AStr + item->HeroicStr);
+			newbon->STA += (item->ASta + item->HeroicSta);
+			newbon->DEX += (item->ADex + item->HeroicDex);
+			newbon->AGI += (item->AAgi + item->HeroicAgi);
+			newbon->INT += (item->AInt + item->HeroicInt);
+			newbon->WIS += (item->AWis + item->HeroicWis);
+			newbon->CHA += (item->ACha + item->HeroicCha);
 
-		newbon->MR += (item->MR + item->HeroicMR);
-		newbon->FR += (item->FR + item->HeroicFR);
-		newbon->CR += (item->CR + item->HeroicCR);
-		newbon->PR += (item->PR + item->HeroicPR);
-		newbon->DR += (item->DR + item->HeroicDR);
-		newbon->Corrup += (item->SVCorruption + item->HeroicSVCorrup);
+			newbon->MR += (item->MR + item->HeroicMR);
+			newbon->FR += (item->FR + item->HeroicFR);
+			newbon->CR += (item->CR + item->HeroicCR);
+			newbon->PR += (item->PR + item->HeroicPR);
+			newbon->DR += (item->DR + item->HeroicDR);
+			newbon->Corrup += (item->SVCorruption + item->HeroicSVCorrup);
 
-		newbon->STRCapMod += item->HeroicStr;
-		newbon->STACapMod += item->HeroicSta;
-		newbon->DEXCapMod += item->HeroicDex;
-		newbon->AGICapMod += item->HeroicAgi;
-		newbon->INTCapMod += item->HeroicInt;
-		newbon->WISCapMod += item->HeroicWis;
-		newbon->CHACapMod += item->HeroicCha;
-		newbon->MRCapMod += item->HeroicMR;
-		newbon->CRCapMod += item->HeroicFR;
-		newbon->FRCapMod += item->HeroicCR;
-		newbon->PRCapMod += item->HeroicPR;
-		newbon->DRCapMod += item->HeroicDR;
-		newbon->CorrupCapMod += item->HeroicSVCorrup;
+			newbon->STRCapMod += item->HeroicStr;
+			newbon->STACapMod += item->HeroicSta;
+			newbon->DEXCapMod += item->HeroicDex;
+			newbon->AGICapMod += item->HeroicAgi;
+			newbon->INTCapMod += item->HeroicInt;
+			newbon->WISCapMod += item->HeroicWis;
+			newbon->CHACapMod += item->HeroicCha;
+			newbon->MRCapMod += item->HeroicMR;
+			newbon->CRCapMod += item->HeroicFR;
+			newbon->FRCapMod += item->HeroicCR;
+			newbon->PRCapMod += item->HeroicPR;
+			newbon->DRCapMod += item->HeroicDR;
+			newbon->CorrupCapMod += item->HeroicSVCorrup;
 
-		newbon->HeroicSTR += item->HeroicStr;
-		newbon->HeroicSTA += item->HeroicSta;
-		newbon->HeroicDEX += item->HeroicDex;
-		newbon->HeroicAGI += item->HeroicAgi;
-		newbon->HeroicINT += item->HeroicInt;
-		newbon->HeroicWIS += item->HeroicWis;
-		newbon->HeroicCHA += item->HeroicCha;
-		newbon->HeroicMR += item->HeroicMR;
-		newbon->HeroicFR += item->HeroicFR;
-		newbon->HeroicCR += item->HeroicCR;
-		newbon->HeroicPR += item->HeroicPR;
-		newbon->HeroicDR += item->HeroicDR;
-		newbon->HeroicCorrup += item->HeroicSVCorrup;
+			newbon->HeroicSTR += item->HeroicStr;
+			newbon->HeroicSTA += item->HeroicSta;
+			newbon->HeroicDEX += item->HeroicDex;
+			newbon->HeroicAGI += item->HeroicAgi;
+			newbon->HeroicINT += item->HeroicInt;
+			newbon->HeroicWIS += item->HeroicWis;
+			newbon->HeroicCHA += item->HeroicCha;
+			newbon->HeroicMR += item->HeroicMR;
+			newbon->HeroicFR += item->HeroicFR;
+			newbon->HeroicCR += item->HeroicCR;
+			newbon->HeroicPR += item->HeroicPR;
+			newbon->HeroicDR += item->HeroicDR;
+			newbon->HeroicCorrup += item->HeroicSVCorrup;
 
-	}
-	else
-	{
-		int lvl = GetLevel();
-		int reclvl = item->RecLevel;
+		}
+		else {
+			int lvl = GetLevel();
 
-		newbon->AC += CalcRecommendedLevelBonus( lvl, reclvl, item->AC );
-		newbon->HP += CalcRecommendedLevelBonus( lvl, reclvl, item->HP );
-		newbon->Mana += CalcRecommendedLevelBonus( lvl, reclvl, item->Mana );
-		newbon->Endurance += CalcRecommendedLevelBonus( lvl, reclvl, item->Endur );
-		newbon->ATK += CalcRecommendedLevelBonus( lvl, reclvl, item->Attack );
-		newbon->STR += CalcRecommendedLevelBonus( lvl, reclvl, (item->AStr + item->HeroicStr) );
-		newbon->STA += CalcRecommendedLevelBonus( lvl, reclvl, (item->ASta + item->HeroicSta) );
-		newbon->DEX += CalcRecommendedLevelBonus( lvl, reclvl, (item->ADex + item->HeroicDex) );
-		newbon->AGI += CalcRecommendedLevelBonus( lvl, reclvl, (item->AAgi + item->HeroicAgi) );
-		newbon->INT += CalcRecommendedLevelBonus( lvl, reclvl, (item->AInt + item->HeroicInt) );
-		newbon->WIS += CalcRecommendedLevelBonus( lvl, reclvl, (item->AWis + item->HeroicWis) );
-		newbon->CHA += CalcRecommendedLevelBonus( lvl, reclvl, (item->ACha + item->HeroicCha) );
+			newbon->AC += CalcRecommendedLevelBonus(lvl, rec_level, item->AC);
+			newbon->HP += CalcRecommendedLevelBonus(lvl, rec_level, item->HP);
+			newbon->Mana += CalcRecommendedLevelBonus(lvl, rec_level, item->Mana);
+			newbon->Endurance += CalcRecommendedLevelBonus(lvl, rec_level, item->Endur);
+			newbon->ATK += CalcRecommendedLevelBonus(lvl, rec_level, item->Attack);
+			newbon->STR += CalcRecommendedLevelBonus(lvl, rec_level, (item->AStr + item->HeroicStr));
+			newbon->STA += CalcRecommendedLevelBonus(lvl, rec_level, (item->ASta + item->HeroicSta));
+			newbon->DEX += CalcRecommendedLevelBonus(lvl, rec_level, (item->ADex + item->HeroicDex));
+			newbon->AGI += CalcRecommendedLevelBonus(lvl, rec_level, (item->AAgi + item->HeroicAgi));
+			newbon->INT += CalcRecommendedLevelBonus(lvl, rec_level, (item->AInt + item->HeroicInt));
+			newbon->WIS += CalcRecommendedLevelBonus(lvl, rec_level, (item->AWis + item->HeroicWis));
+			newbon->CHA += CalcRecommendedLevelBonus(lvl, rec_level, (item->ACha + item->HeroicCha));
 
-		newbon->MR += CalcRecommendedLevelBonus( lvl, reclvl, (item->MR + item->HeroicMR) );
-		newbon->FR += CalcRecommendedLevelBonus( lvl, reclvl, (item->FR + item->HeroicFR) );
-		newbon->CR += CalcRecommendedLevelBonus( lvl, reclvl, (item->CR + item->HeroicCR) );
-		newbon->PR += CalcRecommendedLevelBonus( lvl, reclvl, (item->PR + item->HeroicPR) );
-		newbon->DR += CalcRecommendedLevelBonus( lvl, reclvl, (item->DR + item->HeroicDR) );
-		newbon->Corrup += CalcRecommendedLevelBonus( lvl, reclvl, (item->SVCorruption + item->HeroicSVCorrup) );
+			newbon->MR += CalcRecommendedLevelBonus(lvl, rec_level, (item->MR + item->HeroicMR));
+			newbon->FR += CalcRecommendedLevelBonus(lvl, rec_level, (item->FR + item->HeroicFR));
+			newbon->CR += CalcRecommendedLevelBonus(lvl, rec_level, (item->CR + item->HeroicCR));
+			newbon->PR += CalcRecommendedLevelBonus(lvl, rec_level, (item->PR + item->HeroicPR));
+			newbon->DR += CalcRecommendedLevelBonus(lvl, rec_level, (item->DR + item->HeroicDR));
+			newbon->Corrup +=
+				CalcRecommendedLevelBonus(lvl, rec_level, (item->SVCorruption + item->HeroicSVCorrup));
 
-		newbon->STRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicStr );
-		newbon->STACapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicSta );
-		newbon->DEXCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicDex );
-		newbon->AGICapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicAgi );
-		newbon->INTCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicInt );
-		newbon->WISCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicWis );
-		newbon->CHACapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicCha );
-		newbon->MRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicMR );
-		newbon->CRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicFR );
-		newbon->FRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicCR );
-		newbon->PRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicPR );
-		newbon->DRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicDR );
-		newbon->CorrupCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicSVCorrup );
+			newbon->STRCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicStr);
+			newbon->STACapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicSta);
+			newbon->DEXCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicDex);
+			newbon->AGICapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicAgi);
+			newbon->INTCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicInt);
+			newbon->WISCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicWis);
+			newbon->CHACapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicCha);
+			newbon->MRCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicMR);
+			newbon->CRCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicFR);
+			newbon->FRCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicCR);
+			newbon->PRCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicPR);
+			newbon->DRCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicDR);
+			newbon->CorrupCapMod += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicSVCorrup);
 
-		newbon->HeroicSTR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicStr );
-		newbon->HeroicSTA += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicSta );
-		newbon->HeroicDEX += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicDex );
-		newbon->HeroicAGI += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicAgi );
-		newbon->HeroicINT += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicInt );
-		newbon->HeroicWIS += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicWis );
-		newbon->HeroicCHA += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicCha );
-		newbon->HeroicMR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicMR );
-		newbon->HeroicFR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicFR );
-		newbon->HeroicCR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicCR );
-		newbon->HeroicPR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicPR );
-		newbon->HeroicDR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicDR );
-		newbon->HeroicCorrup += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicSVCorrup );
-	}
+			newbon->HeroicSTR += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicStr);
+			newbon->HeroicSTA += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicSta);
+			newbon->HeroicDEX += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicDex);
+			newbon->HeroicAGI += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicAgi);
+			newbon->HeroicINT += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicInt);
+			newbon->HeroicWIS += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicWis);
+			newbon->HeroicCHA += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicCha);
+			newbon->HeroicMR += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicMR);
+			newbon->HeroicFR += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicFR);
+			newbon->HeroicCR += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicCR);
+			newbon->HeroicPR += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicPR);
+			newbon->HeroicDR += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicDR);
+			newbon->HeroicCorrup += CalcRecommendedLevelBonus(lvl, rec_level, item->HeroicSVCorrup);
+		}
 
-	//FatherNitwit: New style haste, shields, and regens
-	if(newbon->haste < (int32)item->Haste) {
-		newbon->haste = item->Haste;
-	}
-	if(item->Regen > 0)
-		newbon->HPRegen += item->Regen;
+		// FatherNitwit: New style haste, shields, and regens
+		if (newbon->haste < (int32)item->Haste) {
+			newbon->haste = item->Haste;
+		}
+		if (item->Regen > 0)
+			newbon->HPRegen += item->Regen;
 
-	if(item->ManaRegen > 0)
-		newbon->ManaRegen += item->ManaRegen;
+		if (item->ManaRegen > 0)
+			newbon->ManaRegen += item->ManaRegen;
 
-	if(item->EnduranceRegen > 0)
-		newbon->EnduranceRegen += item->EnduranceRegen;
+		if (item->EnduranceRegen > 0)
+			newbon->EnduranceRegen += item->EnduranceRegen;
 
-	if(item->DamageShield > 0) {
-		if((newbon->DamageShield + item->DamageShield) > RuleI(Character, ItemDamageShieldCap))
-			newbon->DamageShield = RuleI(Character, ItemDamageShieldCap);
-		else
-			newbon->DamageShield += item->DamageShield;
-	}
-	if(item->SpellShield > 0) {
-		if((newbon->SpellShield + item->SpellShield) > RuleI(Character, ItemSpellShieldingCap))
-			newbon->SpellShield = RuleI(Character, ItemSpellShieldingCap);
-		else
-			newbon->SpellShield += item->SpellShield;
-	}
-	if(item->Shielding > 0) {
-		if((newbon->MeleeMitigation + item->Shielding) > RuleI(Character, ItemShieldingCap))
-			newbon->MeleeMitigation = RuleI(Character, ItemShieldingCap);
-		else
-			newbon->MeleeMitigation += item->Shielding;
-	}
-	if(item->StunResist > 0) {
-		if((newbon->StunResist + item->StunResist) > RuleI(Character, ItemStunResistCap))
-			newbon->StunResist = RuleI(Character, ItemStunResistCap);
-		else
-			newbon->StunResist += item->StunResist;
-	}
-	if(item->StrikeThrough > 0) {
-		if((newbon->StrikeThrough + item->StrikeThrough) > RuleI(Character, ItemStrikethroughCap))
-			newbon->StrikeThrough = RuleI(Character, ItemStrikethroughCap);
-		else
-			newbon->StrikeThrough += item->StrikeThrough;
-	}
-	if(item->Avoidance > 0) {
-		if((newbon->AvoidMeleeChance + item->Avoidance) > RuleI(Character, ItemAvoidanceCap))
-			newbon->AvoidMeleeChance = RuleI(Character, ItemAvoidanceCap);
-		else
-			newbon->AvoidMeleeChance += item->Avoidance;
-	}
-	if(item->Accuracy > 0) {
-		if((newbon->HitChance + item->Accuracy) > RuleI(Character, ItemAccuracyCap))
-			newbon->HitChance = RuleI(Character, ItemAccuracyCap);
-		else
-			newbon->HitChance += item->Accuracy;
-	}
-	if(item->CombatEffects > 0) {
-		if((newbon->ProcChance + item->CombatEffects) > RuleI(Character, ItemCombatEffectsCap))
-			newbon->ProcChance = RuleI(Character, ItemCombatEffectsCap);
-		else
-			newbon->ProcChance += item->CombatEffects;
-	}
-	if(item->DotShielding > 0) {
-		if((newbon->DoTShielding + item->DotShielding) > RuleI(Character, ItemDoTShieldingCap))
-			newbon->DoTShielding = RuleI(Character, ItemDoTShieldingCap);
-		else
-			newbon->DoTShielding += item->DotShielding;
-	}
+		if (item->DamageShield > 0) {
+			if ((newbon->DamageShield + item->DamageShield) > RuleI(Character, ItemDamageShieldCap))
+				newbon->DamageShield = RuleI(Character, ItemDamageShieldCap);
+			else
+				newbon->DamageShield += item->DamageShield;
+		}
+		if (item->SpellShield > 0) {
+			if ((newbon->SpellShield + item->SpellShield) > RuleI(Character, ItemSpellShieldingCap))
+				newbon->SpellShield = RuleI(Character, ItemSpellShieldingCap);
+			else
+				newbon->SpellShield += item->SpellShield;
+		}
+		if (item->Shielding > 0) {
+			if ((newbon->MeleeMitigation + item->Shielding) > RuleI(Character, ItemShieldingCap))
+				newbon->MeleeMitigation = RuleI(Character, ItemShieldingCap);
+			else
+				newbon->MeleeMitigation += item->Shielding;
+		}
+		if (item->StunResist > 0) {
+			if ((newbon->StunResist + item->StunResist) > RuleI(Character, ItemStunResistCap))
+				newbon->StunResist = RuleI(Character, ItemStunResistCap);
+			else
+				newbon->StunResist += item->StunResist;
+		}
+		if (item->StrikeThrough > 0) {
+			if ((newbon->StrikeThrough + item->StrikeThrough) > RuleI(Character, ItemStrikethroughCap))
+				newbon->StrikeThrough = RuleI(Character, ItemStrikethroughCap);
+			else
+				newbon->StrikeThrough += item->StrikeThrough;
+		}
+		if (item->Avoidance > 0) {
+			if ((newbon->AvoidMeleeChance + item->Avoidance) > RuleI(Character, ItemAvoidanceCap))
+				newbon->AvoidMeleeChance = RuleI(Character, ItemAvoidanceCap);
+			else
+				newbon->AvoidMeleeChance += item->Avoidance;
+		}
+		if (item->Accuracy > 0) {
+			if ((newbon->HitChance + item->Accuracy) > RuleI(Character, ItemAccuracyCap))
+				newbon->HitChance = RuleI(Character, ItemAccuracyCap);
+			else
+				newbon->HitChance += item->Accuracy;
+		}
+		if (item->CombatEffects > 0) {
+			if ((newbon->ProcChance + item->CombatEffects) > RuleI(Character, ItemCombatEffectsCap))
+				newbon->ProcChance = RuleI(Character, ItemCombatEffectsCap);
+			else
+				newbon->ProcChance += item->CombatEffects;
+		}
+		if (item->DotShielding > 0) {
+			if ((newbon->DoTShielding + item->DotShielding) > RuleI(Character, ItemDoTShieldingCap))
+				newbon->DoTShielding = RuleI(Character, ItemDoTShieldingCap);
+			else
+				newbon->DoTShielding += item->DotShielding;
+		}
 
-	if(item->HealAmt > 0) {
-		if((newbon->HealAmt + item->HealAmt) > RuleI(Character, ItemHealAmtCap))
-			newbon->HealAmt = RuleI(Character, ItemHealAmtCap);
-		else
-			newbon->HealAmt += item->HealAmt;
-	}
-	if(item->SpellDmg > 0) {
-		if((newbon->SpellDmg + item->SpellDmg) > RuleI(Character, ItemSpellDmgCap))
-			newbon->SpellDmg = RuleI(Character, ItemSpellDmgCap);
-		else
-			newbon->SpellDmg += item->SpellDmg;
-	}
-	if(item->Clairvoyance > 0) {
-		if((newbon->Clairvoyance + item->Clairvoyance) > RuleI(Character, ItemClairvoyanceCap))
-			newbon->Clairvoyance = RuleI(Character, ItemClairvoyanceCap);
-		else
-			newbon->Clairvoyance += item->Clairvoyance;
-	}
+		if (item->HealAmt > 0) {
+			if ((newbon->HealAmt + item->HealAmt) > RuleI(Character, ItemHealAmtCap))
+				newbon->HealAmt = RuleI(Character, ItemHealAmtCap);
+			else
+				newbon->HealAmt += item->HealAmt;
+		}
+		if (item->SpellDmg > 0) {
+			if ((newbon->SpellDmg + item->SpellDmg) > RuleI(Character, ItemSpellDmgCap))
+				newbon->SpellDmg = RuleI(Character, ItemSpellDmgCap);
+			else
+				newbon->SpellDmg += item->SpellDmg;
+		}
+		if (item->Clairvoyance > 0) {
+			if ((newbon->Clairvoyance + item->Clairvoyance) > RuleI(Character, ItemClairvoyanceCap))
+				newbon->Clairvoyance = RuleI(Character, ItemClairvoyanceCap);
+			else
+				newbon->Clairvoyance += item->Clairvoyance;
+		}
 
-	if(item->DSMitigation > 0) {
-		if((newbon->DSMitigation + item->DSMitigation) > RuleI(Character, ItemDSMitigationCap))
-			newbon->DSMitigation = RuleI(Character, ItemDSMitigationCap);
-		else
-			newbon->DSMitigation += item->DSMitigation;
-	}
-	if (item->Worn.Effect > 0 && item->Worn.Type == ET_WornEffect) {// latent effects
-		ApplySpellsBonuses(item->Worn.Effect, item->Worn.Level, newbon, 0, item->Worn.Type);
-	}
+		if (item->DSMitigation > 0) {
+			if ((newbon->DSMitigation + item->DSMitigation) > RuleI(Character, ItemDSMitigationCap))
+				newbon->DSMitigation = RuleI(Character, ItemDSMitigationCap);
+			else
+				newbon->DSMitigation += item->DSMitigation;
+		}
+		if (item->Worn.Effect > 0 && item->Worn.Type == ET_WornEffect) { // latent effects
+			ApplySpellsBonuses(item->Worn.Effect, item->Worn.Level, newbon, 0, item->Worn.Type);
+		}
 
-	if (item->Focus.Effect>0 && (item->Focus.Type == ET_Focus)) { // focus effects
-		ApplySpellsBonuses(item->Focus.Effect, item->Focus.Level, newbon, 0);
-	}
+		if (item->Focus.Effect > 0 && (item->Focus.Type == ET_Focus)) { // focus effects
+			ApplySpellsBonuses(item->Focus.Effect, item->Focus.Level, newbon, 0);
+		}
 
-	switch(item->BardType)
-	{
-	case 51: /* All (e.g. Singing Short Sword) */
-		{
-			if(item->BardValue > newbon->singingMod)
+		switch (item->BardType) {
+		case 51: /* All (e.g. Singing Short Sword) */
+			if (item->BardValue > newbon->singingMod)
 				newbon->singingMod = item->BardValue;
-			if(item->BardValue > newbon->brassMod)
+			if (item->BardValue > newbon->brassMod)
 				newbon->brassMod = item->BardValue;
-			if(item->BardValue > newbon->stringedMod)
+			if (item->BardValue > newbon->stringedMod)
 				newbon->stringedMod = item->BardValue;
-			if(item->BardValue > newbon->percussionMod)
+			if (item->BardValue > newbon->percussionMod)
 				newbon->percussionMod = item->BardValue;
-			if(item->BardValue > newbon->windMod)
+			if (item->BardValue > newbon->windMod)
 				newbon->windMod = item->BardValue;
 			break;
-		}
-	case 50: /* Singing */
-		{
-			if(item->BardValue > newbon->singingMod)
+		case 50: /* Singing */
+			if (item->BardValue > newbon->singingMod)
 				newbon->singingMod = item->BardValue;
 			break;
-		}
-	case 23: /* Wind */
-		{
-			if(item->BardValue > newbon->windMod)
+		case 23: /* Wind */
+			if (item->BardValue > newbon->windMod)
 				newbon->windMod = item->BardValue;
 			break;
-		}
-	case 24: /* stringed */
-		{
-			if(item->BardValue > newbon->stringedMod)
+		case 24: /* stringed */
+			if (item->BardValue > newbon->stringedMod)
 				newbon->stringedMod = item->BardValue;
 			break;
-		}
-	case 25: /* brass */
-		{
-			if(item->BardValue > newbon->brassMod)
+		case 25: /* brass */
+			if (item->BardValue > newbon->brassMod)
 				newbon->brassMod = item->BardValue;
 			break;
-		}
-	case 26: /* Percussion */
-		{
-			if(item->BardValue > newbon->percussionMod)
+		case 26: /* Percussion */
+			if (item->BardValue > newbon->percussionMod)
 				newbon->percussionMod = item->BardValue;
 			break;
 		}
+	
+		// Add Item Faction Mods
+		if (item->FactionMod1) {
+			if (item->FactionAmt1 > 0 && item->FactionAmt1 > GetItemFactionBonus(item->FactionMod1)) {
+				AddItemFactionBonus(item->FactionMod1, item->FactionAmt1);
+			}
+			else if (item->FactionAmt1 < 0 && item->FactionAmt1 < GetItemFactionBonus(item->FactionMod1)) {
+				AddItemFactionBonus(item->FactionMod1, item->FactionAmt1);
+			}
+		}
+		if (item->FactionMod2) {
+			if (item->FactionAmt2 > 0 && item->FactionAmt2 > GetItemFactionBonus(item->FactionMod2)) {
+				AddItemFactionBonus(item->FactionMod2, item->FactionAmt2);
+			}
+			else if (item->FactionAmt2 < 0 && item->FactionAmt2 < GetItemFactionBonus(item->FactionMod2)) {
+				AddItemFactionBonus(item->FactionMod2, item->FactionAmt2);
+			}
+		}
+		if (item->FactionMod3) {
+			if (item->FactionAmt3 > 0 && item->FactionAmt3 > GetItemFactionBonus(item->FactionMod3)) {
+				AddItemFactionBonus(item->FactionMod3, item->FactionAmt3);
+			}
+			else if (item->FactionAmt3 < 0 && item->FactionAmt3 < GetItemFactionBonus(item->FactionMod3)) {
+				AddItemFactionBonus(item->FactionMod3, item->FactionAmt3);
+			}
+		}
+		if (item->FactionMod4) {
+			if (item->FactionAmt4 > 0 && item->FactionAmt4 > GetItemFactionBonus(item->FactionMod4)) {
+				AddItemFactionBonus(item->FactionMod4, item->FactionAmt4);
+			}
+			else if (item->FactionAmt4 < 0 && item->FactionAmt4 < GetItemFactionBonus(item->FactionMod4)) {
+				AddItemFactionBonus(item->FactionMod4, item->FactionAmt4);
+			}
+		}
+
+		if (item->ExtraDmgSkill != 0 && item->ExtraDmgSkill <= HIGHEST_SKILL) {
+			if ((newbon->SkillDamageAmount[item->ExtraDmgSkill] + item->ExtraDmgAmt) >
+				RuleI(Character, ItemExtraDmgCap))
+				newbon->SkillDamageAmount[item->ExtraDmgSkill] = RuleI(Character, ItemExtraDmgCap);
+			else
+				newbon->SkillDamageAmount[item->ExtraDmgSkill] += item->ExtraDmgAmt;
+		}
 	}
 
-	if (item->SkillModValue != 0 && item->SkillModType <= HIGHEST_SKILL){
+	// Process when ammo_slot_item = true or false
+	if (item->SkillModValue != 0 && item->SkillModType <= HIGHEST_SKILL) {
 		if ((item->SkillModValue > 0 && newbon->skillmod[item->SkillModType] < item->SkillModValue) ||
-			(item->SkillModValue < 0 && newbon->skillmod[item->SkillModType] > item->SkillModValue))
-		{
+			(item->SkillModValue < 0 && newbon->skillmod[item->SkillModType] > item->SkillModValue)) {
+
 			newbon->skillmod[item->SkillModType] = item->SkillModValue;
+			newbon->skillmodmax[item->SkillModType] = item->SkillModMax;
 		}
 	}
 
-	// Add Item Faction Mods
-	if (item->FactionMod1)
-	{
-		if (item->FactionAmt1 > 0 && item->FactionAmt1 > GetItemFactionBonus(item->FactionMod1))
-		{
-			AddItemFactionBonus(item->FactionMod1, item->FactionAmt1);
-		}
-		else if (item->FactionAmt1 < 0 && item->FactionAmt1 < GetItemFactionBonus(item->FactionMod1))
-		{
-			AddItemFactionBonus(item->FactionMod1, item->FactionAmt1);
-		}
+	if (!isAug) {
+		for (int i = 0; i < EQEmu::legacy::ITEM_COMMON_SIZE; i++)
+			AddItemBonuses(inst->GetAugment(i), newbon, true, false, rec_level, ammo_slot_item);
 	}
-	if (item->FactionMod2)
-	{
-		if (item->FactionAmt2 > 0 && item->FactionAmt2 > GetItemFactionBonus(item->FactionMod2))
-		{
-			AddItemFactionBonus(item->FactionMod2, item->FactionAmt2);
-		}
-		else if (item->FactionAmt2 < 0 && item->FactionAmt2 < GetItemFactionBonus(item->FactionMod2))
-		{
-			AddItemFactionBonus(item->FactionMod2, item->FactionAmt2);
-		}
-	}
-	if (item->FactionMod3)
-	{
-		if (item->FactionAmt3 > 0 && item->FactionAmt3 > GetItemFactionBonus(item->FactionMod3))
-		{
-			AddItemFactionBonus(item->FactionMod3, item->FactionAmt3);
-		}
-		else if (item->FactionAmt3 < 0 && item->FactionAmt3 < GetItemFactionBonus(item->FactionMod3))
-		{
-			AddItemFactionBonus(item->FactionMod3, item->FactionAmt3);
-		}
-	}
-	if (item->FactionMod4)
-	{
-		if (item->FactionAmt4 > 0 && item->FactionAmt4 > GetItemFactionBonus(item->FactionMod4))
-		{
-			AddItemFactionBonus(item->FactionMod4, item->FactionAmt4);
-		}
-		else if (item->FactionAmt4 < 0 && item->FactionAmt4 < GetItemFactionBonus(item->FactionMod4))
-		{
-			AddItemFactionBonus(item->FactionMod4, item->FactionAmt4);
-		}
-	}
-
-	if (item->ExtraDmgSkill != 0 && item->ExtraDmgSkill <= HIGHEST_SKILL) {
-		if((newbon->SkillDamageAmount[item->ExtraDmgSkill] + item->ExtraDmgAmt) > RuleI(Character, ItemExtraDmgCap))
-			newbon->SkillDamageAmount[item->ExtraDmgSkill] = RuleI(Character, ItemExtraDmgCap);
-		else
-			newbon->SkillDamageAmount[item->ExtraDmgSkill] += item->ExtraDmgAmt;
-	}
-
-	if (!isAug)
-	{
-		int i;
-		for (i = 0; i < EmuConstants::ITEM_COMMON_SIZE; i++) {
-			AddItemBonuses(inst->GetAugment(i),newbon,true);
-		}
-	}
-
 }
 
 void Client::AdditiveWornBonuses(const ItemInst *inst, StatBonuses* newbon, bool isAug) {
@@ -589,7 +565,7 @@ void Client::AdditiveWornBonuses(const ItemInst *inst, StatBonuses* newbon, bool
 	if (!isAug)
 	{
 		int i;
-		for (i = 0; i < EmuConstants::ITEM_COMMON_SIZE; i++) {
+		for (i = 0; i < EQEmu::legacy::ITEM_COMMON_SIZE; i++) {
 			AdditiveWornBonuses(inst->GetAugment(i),newbon,true);
 		}
 	}
@@ -600,7 +576,7 @@ void Client::CalcEdibleBonuses(StatBonuses* newbon) {
 
 	bool food = false;
 	bool drink = false;
-	for (i = EmuConstants::GENERAL_BEGIN; i <= EmuConstants::GENERAL_BAGS_BEGIN; i++)
+	for (i = EQEmu::legacy::GENERAL_BEGIN; i <= EQEmu::legacy::GENERAL_BAGS_BEGIN; i++)
 	{
 		if (food && drink)
 			break;
@@ -616,7 +592,7 @@ void Client::CalcEdibleBonuses(StatBonuses* newbon) {
 			AddItemBonuses(inst, newbon);
 		}
 	}
-	for (i = EmuConstants::GENERAL_BAGS_BEGIN; i <= EmuConstants::GENERAL_BAGS_END; i++)
+	for (i = EQEmu::legacy::GENERAL_BAGS_BEGIN; i <= EQEmu::legacy::GENERAL_BAGS_END; i++)
 	{
 		if (food && drink)
 			break;
@@ -1554,9 +1530,12 @@ void Mob::CalcSpellBonuses(StatBonuses* newbon)
 				NegateSpellsBonuses(buffs[i].spellid);
 		}
 	}
+
+	// THIS IS WRONG, leaving for now
 	//this prolly suffer from roundoff error slightly...
-	newbon->AC = newbon->AC * 10 / 34;	//ratio determined impirically from client.
-	if (GetClass() == BARD) newbon->ManaRegen = 0; // Bards do not get mana regen from spells.
+	newbon->AC = newbon->AC * 10 / 34;      //ratio determined impirically from client.
+	if (GetClass() == BARD)
+		newbon->ManaRegen = 0; // Bards do not get mana regen from spells.
 }
 
 void Mob::ApplySpellsBonuses(uint16 spell_id, uint8 casterlevel, StatBonuses *new_bonus, uint16 casterId,
@@ -1565,13 +1544,9 @@ void Mob::ApplySpellsBonuses(uint16 spell_id, uint8 casterlevel, StatBonuses *ne
 {
 	int i, effect_value, base2, max, effectid;
 	bool AdditiveWornBonus = false;
-	Mob *caster = nullptr;
 
 	if(!IsAISpellEffect && !IsValidSpell(spell_id))
 		return;
-
-	if(casterId > 0)
-		caster = entity_list.GetMob(casterId);
 
 	for (i = 0; i < EFFECT_COUNT; i++)
 	{
@@ -1599,7 +1574,7 @@ void Mob::ApplySpellsBonuses(uint16 spell_id, uint8 casterlevel, StatBonuses *ne
 				AdditiveWornBonus = true;
 
 			effectid = spells[spell_id].effectid[i];
-			effect_value = CalcSpellEffectValue(spell_id, i, casterlevel, instrument_mod, caster, ticsremaining);
+			effect_value = CalcSpellEffectValue(spell_id, i, casterlevel, instrument_mod, nullptr, ticsremaining, casterId);
 			base2 = spells[spell_id].base2[i];
 			max = spells[spell_id].max[i];
 		}
@@ -2208,10 +2183,11 @@ void Mob::ApplySpellsBonuses(uint16 spell_id, uint8 casterlevel, StatBonuses *ne
 				// Bad data or unsupported new skill
 				if (base2 > HIGHEST_SKILL)
 					break;
-				if(base2 == ALL_SKILLS)
-					new_bonus->DamageModifier[HIGHEST_SKILL+1] += effect_value;
-				else
-					new_bonus->DamageModifier[base2] += effect_value;
+				int skill = base2 == ALL_SKILLS ? HIGHEST_SKILL + 1 : base2;
+				if (effect_value < 0 && new_bonus->DamageModifier[skill] > effect_value)
+					new_bonus->DamageModifier[skill] = effect_value;
+				else if (effect_value > 0 && new_bonus->DamageModifier[skill] < effect_value)
+					new_bonus->DamageModifier[skill] = effect_value;
 				break;
 			}
 
@@ -2220,10 +2196,11 @@ void Mob::ApplySpellsBonuses(uint16 spell_id, uint8 casterlevel, StatBonuses *ne
 				// Bad data or unsupported new skill
 				if (base2 > HIGHEST_SKILL)
 					break;
-				if(base2 == ALL_SKILLS)
-					new_bonus->DamageModifier2[HIGHEST_SKILL+1] += effect_value;
-				else
-					new_bonus->DamageModifier2[base2] += effect_value;
+				int skill = base2 == ALL_SKILLS ? HIGHEST_SKILL + 1 : base2;
+				if (effect_value < 0 && new_bonus->DamageModifier2[skill] > effect_value)
+					new_bonus->DamageModifier2[skill] = effect_value;
+				else if (effect_value > 0 && new_bonus->DamageModifier2[skill] < effect_value)
+					new_bonus->DamageModifier2[skill] = effect_value;
 				break;
 			}
 
@@ -2232,10 +2209,11 @@ void Mob::ApplySpellsBonuses(uint16 spell_id, uint8 casterlevel, StatBonuses *ne
 				// Bad data or unsupported new skill
 				if (base2 > HIGHEST_SKILL)
 					break;
-				if(base2 == ALL_SKILLS)
-					new_bonus->MinDamageModifier[HIGHEST_SKILL+1] += effect_value;
-				else
-					new_bonus->MinDamageModifier[base2] += effect_value;
+				int skill = base2 == ALL_SKILLS ? HIGHEST_SKILL + 1 : base2;
+				if (effect_value < 0 && new_bonus->MinDamageModifier[skill] > effect_value)
+					new_bonus->MinDamageModifier[skill] = effect_value;
+				else if (effect_value > 0 && new_bonus->MinDamageModifier[skill] < effect_value)
+					new_bonus->MinDamageModifier[skill] = effect_value;
 				break;
 			}
 
@@ -3223,7 +3201,7 @@ void NPC::CalcItemBonuses(StatBonuses *newbon)
 {
 	if(newbon){
 
-		for(int i = 0; i < EmuConstants::EQUIPMENT_SIZE; i++){
+		for (int i = 0; i < EQEmu::legacy::EQUIPMENT_SIZE; i++){
 			const Item_Struct *cur = database.GetItem(equipment[i]);
 			if(cur){
 				//basic stats
@@ -3301,24 +3279,24 @@ void Client::CalcItemScale() {
 	bool changed = false;
 
 	// MainAmmo excluded in helper function below
-	if(CalcItemScale(EmuConstants::EQUIPMENT_BEGIN, EmuConstants::EQUIPMENT_END)) // original coding excluded MainAmmo (< 21)
+	if (CalcItemScale(EQEmu::legacy::EQUIPMENT_BEGIN, EQEmu::legacy::EQUIPMENT_END)) // original coding excluded MainAmmo (< 21)
 		changed = true;
 
-	if(CalcItemScale(EmuConstants::GENERAL_BEGIN, EmuConstants::GENERAL_END)) // original coding excluded MainCursor (< 30)
+	if (CalcItemScale(EQEmu::legacy::GENERAL_BEGIN, EQEmu::legacy::GENERAL_END)) // original coding excluded MainCursor (< 30)
 		changed = true;
 
 	// I excluded cursor bag slots here because cursor was excluded above..if this is incorrect, change 'slot_y' here to CURSOR_BAG_END
 	// and 'slot_y' above to CURSOR from GENERAL_END above - or however it is supposed to be...
-	if(CalcItemScale(EmuConstants::GENERAL_BAGS_BEGIN, EmuConstants::GENERAL_BAGS_END)) // (< 341)
+	if (CalcItemScale(EQEmu::legacy::GENERAL_BAGS_BEGIN, EQEmu::legacy::GENERAL_BAGS_END)) // (< 341)
 		changed = true;
 
-	if(CalcItemScale(EmuConstants::TRIBUTE_BEGIN, EmuConstants::TRIBUTE_END)) // (< 405)
+	if (CalcItemScale(EQEmu::legacy::TRIBUTE_BEGIN, EQEmu::legacy::TRIBUTE_END)) // (< 405)
 		changed = true;
 
 	//Power Source Slot
-	if (GetClientVersion() >= ClientVersion::SoF)
+	if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF)
 	{
-		if(CalcItemScale(MainPowerSource, MainPowerSource))
+		if (CalcItemScale(EQEmu::legacy::SlotPowerSource, EQEmu::legacy::SlotPowerSource))
 			changed = true;
 	}
 
@@ -3333,7 +3311,7 @@ bool Client::CalcItemScale(uint32 slot_x, uint32 slot_y) {
 	bool changed = false;
 	uint32 i;
 	for (i = slot_x; i <= slot_y; i++) {
-		if (i == MainAmmo) // moved here from calling procedure to facilitate future range changes where MainAmmo may not be the last slot
+		if (i == EQEmu::legacy::SlotAmmo) // moved here from calling procedure to facilitate future range changes where MainAmmo may not be the last slot
 			continue;
 
 		ItemInst* inst = m_inv.GetItem(i);
@@ -3343,7 +3321,7 @@ bool Client::CalcItemScale(uint32 slot_x, uint32 slot_y) {
 
 		// TEST CODE: test for bazaar trader crashing with charm items
 		if (Trader)
-			if (i >= EmuConstants::GENERAL_BAGS_BEGIN && i <= EmuConstants::GENERAL_BAGS_END) {
+			if (i >= EQEmu::legacy::GENERAL_BAGS_BEGIN && i <= EQEmu::legacy::GENERAL_BAGS_END) {
 				ItemInst* parent_item = m_inv.GetItem(Inventory::CalcSlotId(i));
 				if (parent_item && parent_item->GetItem()->ID == 17899) // trader satchel
 					continue;
@@ -3363,7 +3341,7 @@ bool Client::CalcItemScale(uint32 slot_x, uint32 slot_y) {
 		}
 
 		//iterate all augments
-		for (int x = AUG_BEGIN; x < EmuConstants::ITEM_COMMON_SIZE; ++x)
+		for (int x = AUG_INDEX_BEGIN; x < EQEmu::legacy::ITEM_COMMON_SIZE; ++x)
 		{
 			ItemInst * a_inst = inst->GetAugment(x);
 			if(!a_inst)
@@ -3395,24 +3373,24 @@ void Client::DoItemEnterZone() {
 	bool changed = false;
 
 	// MainAmmo excluded in helper function below
-	if(DoItemEnterZone(EmuConstants::EQUIPMENT_BEGIN, EmuConstants::EQUIPMENT_END)) // original coding excluded MainAmmo (< 21)
+	if (DoItemEnterZone(EQEmu::legacy::EQUIPMENT_BEGIN, EQEmu::legacy::EQUIPMENT_END)) // original coding excluded MainAmmo (< 21)
 		changed = true;
 
-	if(DoItemEnterZone(EmuConstants::GENERAL_BEGIN, EmuConstants::GENERAL_END)) // original coding excluded MainCursor (< 30)
+	if (DoItemEnterZone(EQEmu::legacy::GENERAL_BEGIN, EQEmu::legacy::GENERAL_END)) // original coding excluded MainCursor (< 30)
 		changed = true;
 
 	// I excluded cursor bag slots here because cursor was excluded above..if this is incorrect, change 'slot_y' here to CURSOR_BAG_END
 	// and 'slot_y' above to CURSOR from GENERAL_END above - or however it is supposed to be...
-	if(DoItemEnterZone(EmuConstants::GENERAL_BAGS_BEGIN, EmuConstants::GENERAL_BAGS_END)) // (< 341)
+	if (DoItemEnterZone(EQEmu::legacy::GENERAL_BAGS_BEGIN, EQEmu::legacy::GENERAL_BAGS_END)) // (< 341)
 		changed = true;
 
-	if(DoItemEnterZone(EmuConstants::TRIBUTE_BEGIN, EmuConstants::TRIBUTE_END)) // (< 405)
+	if (DoItemEnterZone(EQEmu::legacy::TRIBUTE_BEGIN, EQEmu::legacy::TRIBUTE_END)) // (< 405)
 		changed = true;
 
 	//Power Source Slot
-	if (GetClientVersion() >= ClientVersion::SoF)
+	if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF)
 	{
-		if(DoItemEnterZone(MainPowerSource, MainPowerSource))
+		if (DoItemEnterZone(EQEmu::legacy::SlotPowerSource, EQEmu::legacy::SlotPowerSource))
 			changed = true;
 	}
 
@@ -3426,7 +3404,7 @@ bool Client::DoItemEnterZone(uint32 slot_x, uint32 slot_y) {
 	// behavior change: 'slot_y' is now [RANGE]_END and not [RANGE]_END + 1
 	bool changed = false;
 	for(uint32 i = slot_x; i <= slot_y; i++) {
-		if (i == MainAmmo) // moved here from calling procedure to facilitate future range changes where MainAmmo may not be the last slot
+		if (i == EQEmu::legacy::SlotAmmo) // moved here from calling procedure to facilitate future range changes where MainAmmo may not be the last slot
 			continue;
 
 		ItemInst* inst = m_inv.GetItem(i);
@@ -3436,7 +3414,7 @@ bool Client::DoItemEnterZone(uint32 slot_x, uint32 slot_y) {
 
 		// TEST CODE: test for bazaar trader crashing with charm items
 		if (Trader)
-			if (i >= EmuConstants::GENERAL_BAGS_BEGIN && i <= EmuConstants::GENERAL_BAGS_END) {
+			if (i >= EQEmu::legacy::GENERAL_BAGS_BEGIN && i <= EQEmu::legacy::GENERAL_BAGS_END) {
 				ItemInst* parent_item = m_inv.GetItem(Inventory::CalcSlotId(i));
 				if (parent_item && parent_item->GetItem()->ID == 17899) // trader satchel
 					continue;
@@ -3448,7 +3426,7 @@ bool Client::DoItemEnterZone(uint32 slot_x, uint32 slot_y) {
 			uint16 oldexp = inst->GetExp();
 
 			parse->EventItem(EVENT_ITEM_ENTER_ZONE, this, inst, nullptr, "", 0);
-			if(i <= MainAmmo || i == MainPowerSource) {
+			if (i <= EQEmu::legacy::SlotAmmo || i == EQEmu::legacy::SlotPowerSource) {
 				parse->EventItem(EVENT_EQUIP_ITEM, this, inst, nullptr, "", i);
 			}
 
@@ -3458,7 +3436,7 @@ bool Client::DoItemEnterZone(uint32 slot_x, uint32 slot_y) {
 				update_slot = true;
 			}
 		} else {
-			if(i <= MainAmmo || i == MainPowerSource) {
+			if (i <= EQEmu::legacy::SlotAmmo || i == EQEmu::legacy::SlotPowerSource) {
 				parse->EventItem(EVENT_EQUIP_ITEM, this, inst, nullptr, "", i);
 			}
 
@@ -3466,7 +3444,7 @@ bool Client::DoItemEnterZone(uint32 slot_x, uint32 slot_y) {
 		}
 
 		//iterate all augments
-		for (int x = AUG_BEGIN; x < EmuConstants::ITEM_COMMON_SIZE; ++x)
+		for (int x = AUG_INDEX_BEGIN; x < EQEmu::legacy::ITEM_COMMON_SIZE; ++x)
 		{
 			ItemInst *a_inst = inst->GetAugment(x);
 			if(!a_inst)

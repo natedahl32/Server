@@ -1307,8 +1307,8 @@ void QuestManager::itemlink(int item_id) {
 		if (item == nullptr)
 			return;
 
-		Client::TextLink linker;
-		linker.SetLinkType(linker.linkItemData);
+		EQEmu::saylink::SayLinkEngine linker;
+		linker.SetLinkType(linker.SayLinkItemData);
 		linker.SetItemData(item);
 
 		auto item_link = linker.GenerateLink();
@@ -1565,7 +1565,7 @@ void QuestManager::ding() {
 void QuestManager::rebind(int zoneid, const glm::vec3& location) {
 	QuestManagerCurrentQuestVars();
 	if(initiator && initiator->IsClient()) {
-		initiator->SetBindPoint(zoneid, 0, location);
+		initiator->SetBindPoint(0, zoneid, 0, location);
 	}
 }
 
@@ -2056,24 +2056,23 @@ bool QuestManager::botquest()
 bool QuestManager::createBot(const char *name, const char *lastname, uint8 level, uint16 race, uint8 botclass, uint8 gender)
 {
 	QuestManagerCurrentQuestVars();
-	std::string TempErrorMessage;
 	uint32 MaxBotCreate = RuleI(Bots, CreationLimit);
 
 	if (initiator && initiator->IsClient())
 	{
-		if(Bot::SpawnedBotCount(initiator->CharacterID(), &TempErrorMessage) >= MaxBotCreate)
+		if(Bot::SpawnedBotCount(initiator->CharacterID()) >= MaxBotCreate)
 		{
 			initiator->Message(15,"You have the maximum number of bots allowed.");
 			return false;
 		}
 
-		if(!TempErrorMessage.empty())
-		{
-			initiator->Message(13, "Database Error: %s", TempErrorMessage.c_str());
+		std::string test_name = name;
+		bool available_flag = false;
+		if(!botdb.QueryNameAvailablity(test_name, available_flag)) {
+			initiator->Message(0, "%s for '%s'", BotDatabase::fail::QueryNameAvailablity(), (char*)name);
 			return false;
 		}
-
-		if(Bot::IsBotNameAvailable((char*)name,&TempErrorMessage)) {
+		if (!available_flag) {
 			initiator->Message(0, "The name %s is already being used or is invalid. Please choose a different name.", (char*)name);
 			return false;
 		}
@@ -2090,11 +2089,6 @@ bool QuestManager::createBot(const char *name, const char *lastname, uint8 level
 
 			if(!NewBot->IsValidName()) {
 				initiator->Message(0, "%s has invalid characters. You can use only the A-Z, a-z and _ characters in a bot name.", NewBot->GetCleanName());
-				return false;
-			}
-
-			if(!TempErrorMessage.empty()) {
-				initiator->Message(13, "Database Error: %s", TempErrorMessage.c_str());
 				return false;
 			}
 
@@ -2447,12 +2441,12 @@ int QuestManager::collectitems(uint32 item_id, bool remove)
 	int quantity = 0;
 	int slot_id;
 
-	for (slot_id = EmuConstants::GENERAL_BEGIN; slot_id <= EmuConstants::GENERAL_END; ++slot_id)
+	for (slot_id = EQEmu::legacy::GENERAL_BEGIN; slot_id <= EQEmu::legacy::GENERAL_END; ++slot_id)
 	{
 		quantity += collectitems_processSlot(slot_id, item_id, remove);
 	}
 
-	for (slot_id = EmuConstants::GENERAL_BAGS_BEGIN; slot_id <= EmuConstants::GENERAL_BAGS_END; ++slot_id)
+	for (slot_id = EQEmu::legacy::GENERAL_BAGS_BEGIN; slot_id <= EQEmu::legacy::GENERAL_BAGS_END; ++slot_id)
 	{
 		quantity += collectitems_processSlot(slot_id, item_id, remove);
 	}
@@ -2541,8 +2535,8 @@ const char* QuestManager::varlink(char* perltext, int item_id) {
 	if (!item)
 		return "INVALID ITEM ID IN VARLINK";
 
-	Client::TextLink linker;
-	linker.SetLinkType(linker.linkItemData);
+	EQEmu::saylink::SayLinkEngine linker;
+	linker.SetLinkType(linker.SayLinkItemData);
 	linker.SetItemData(item);
 
 	auto item_link = linker.GenerateLink();
@@ -2580,6 +2574,45 @@ uint16 QuestManager::CreateInstance(const char *zone, int16 version, uint32 dura
 void QuestManager::DestroyInstance(uint16 instance_id)
 {
 	database.DeleteInstance(instance_id);
+}
+
+void QuestManager::UpdateInstanceTimer(uint16 instance_id, uint32 new_duration)
+{
+	std::string query = StringFormat("UPDATE instance_list SET duration = %lu, start_time = UNIX_TIMESTAMP() WHERE id = %lu",
+		(unsigned long)new_duration, (unsigned long)instance_id);
+	auto results = database.QueryDatabase(query);
+
+	if (results.Success()) {
+		auto pack = new ServerPacket(ServerOP_InstanceUpdateTime, sizeof(ServerInstanceUpdateTime_Struct));
+		ServerInstanceUpdateTime_Struct *ut = (ServerInstanceUpdateTime_Struct*)pack->pBuffer;
+		ut->instance_id = instance_id;
+		ut->new_duration = new_duration;
+		worldserver.SendPacket(pack);
+		safe_delete(pack);
+	}
+}
+
+uint32 QuestManager::GetInstanceTimer() {
+	if (zone && zone->GetInstanceID() > 0 && zone->GetInstanceTimer()) {
+		uint32 ttime = zone->GetInstanceTimer()->GetRemainingTime();
+		return ttime;
+	}
+	return 0;
+}
+
+uint32 QuestManager::GetInstanceTimerByID(uint16 instance_id) {
+	if (instance_id == 0)
+		return 0;
+	
+	std::string query = StringFormat("SELECT ((start_time + duration) - UNIX_TIMESTAMP()) AS `remaining` FROM `instance_list` WHERE `id` = %lu", (unsigned long)instance_id);
+	auto results = database.QueryDatabase(query);
+	
+	if (results.Success()) {
+		auto row = results.begin();
+		uint32 timer = atoi(row[0]);
+		return timer;
+	}
+	return 0;
 }
 
 uint16 QuestManager::GetInstanceID(const char *zone, int16 version)
@@ -2727,14 +2760,13 @@ const char* QuestManager::saylink(char* Phrase, bool silent, const char* LinkNam
 	}
 	safe_delete_array(escaped_string);
 
-	if (silent)
-		sayid = sayid + 750000;
-	else
-		sayid = sayid + 500000;
-
 	//Create the say link as an item link hash
-	Client::TextLink linker;
-	linker.SetProxyItemID(sayid);
+	EQEmu::saylink::SayLinkEngine linker;
+	linker.SetProxyItemID(SAYLINK_ITEM_ID);
+	if (silent)
+		linker.SetProxyAugment2ID(sayid);
+	else
+		linker.SetProxyAugment1ID(sayid);
 	linker.SetProxyText(LinkName);
 
 	auto say_link = linker.GenerateLink();
@@ -2843,11 +2875,11 @@ void QuestManager::removetitle(int titleset) {
 	initiator->RemoveTitle(titleset);
 }
 
-void QuestManager::wearchange(uint8 slot, uint16 texture)
+void QuestManager::wearchange(uint8 slot, uint16 texture, uint32 hero_forge_model /*= 0*/, uint32 elite_material /*= 0*/)
 {
 	QuestManagerCurrentQuestVars();
 	if(owner){
-		owner->SendTextureWC(slot, texture);
+		owner->SendTextureWC(slot, texture, hero_forge_model, elite_material);
 		if(owner->IsNPC()) {
 			owner->CastToNPC()->NPCSlotTexture(slot, texture);
 		}
@@ -3053,4 +3085,76 @@ std::string QuestManager::GetEncounter() const {
 	}
 
 	return "";
+}
+
+void QuestManager::UpdateZoneHeader(std::string type, std::string value) {
+	if (strcasecmp(type.c_str(), "ztype") == 0)
+		zone->newzone_data.ztype = atoi(value.c_str());
+	else if (strcasecmp(type.c_str(), "fog_red") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_red[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "fog_green") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_green[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "fog_blue") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_blue[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "fog_minclip") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_minclip[i] = atof(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "fog_maxclip") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_maxclip[i] = atof(value.c_str());
+		}
+	}
+	else if (strcasecmp(type.c_str(), "gravity") == 0)
+		zone->newzone_data.gravity = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "time_type") == 0)
+		zone->newzone_data.time_type = atoi(value.c_str());
+	else if (strcasecmp(type.c_str(), "rain_chance") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.rain_chance[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "rain_duration") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.rain_duration[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "snow_chance") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.snow_chance[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "snow_duration") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.snow_duration[i] = atoi(value.c_str());
+		}
+	}
+	else if (strcasecmp(type.c_str(), "sky") == 0)
+		zone->newzone_data.sky = atoi(value.c_str());
+	else if (strcasecmp(type.c_str(), "safe_x") == 0)
+		zone->newzone_data.safe_x = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "safe_y") == 0)
+		zone->newzone_data.safe_y = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "safe_z") == 0)
+		zone->newzone_data.safe_z = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "max_z") == 0)
+		zone->newzone_data.max_z = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "underworld") == 0)
+		zone->newzone_data.underworld = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "minclip") == 0)
+		zone->newzone_data.minclip = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "maxclip") == 0)
+		zone->newzone_data.maxclip = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "fog_density") == 0)
+		zone->newzone_data.fog_density = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "suspendbuffs") == 0)
+		zone->newzone_data.SuspendBuffs = atoi(value.c_str());
+	
+	EQApplicationPacket* outapp = new EQApplicationPacket(OP_NewZone, sizeof(NewZone_Struct));
+	memcpy(outapp->pBuffer, &zone->newzone_data, outapp->size);
+	entity_list.QueueClients(0, outapp);
+	safe_delete(outapp);
 }

@@ -1,5 +1,20 @@
+/*	EQEMu: Everquest Server Emulator
+	Copyright (C) 2001-2016 EQEMu Development Team (http://eqemulator.org)
 
+	This program is free software; you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation; version 2 of the License.
 
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY except by those people which sell it, which
+	are required to give you total support for your newly bought product;
+	without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+	A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+*/
 
 #ifndef RULE_CATEGORY
 #define RULE_CATEGORY(name)
@@ -85,6 +100,8 @@ RULE_INT(Character, MaxCharmDurationForPlayerCharacter, 15)
 RULE_INT(Character, BaseHPRegenBonusRaces, 4352)	//a bitmask of race(s) that receive the regen bonus. Iksar (4096) & Troll (256) = 4352. see common/races.h for the bitmask values
 RULE_BOOL(Character, SoDClientUseSoDHPManaEnd, false)	// Setting this to true will allow SoD clients to use the SoD HP/Mana/End formulas and previous clients will use the old formulas
 RULE_BOOL(Character, UseRaceClassExpBonuses, true)	// Setting this to true will enable Class and Racial experience rate bonuses
+RULE_BOOL(Character, UseOldRaceExpPenalties, false)	// Setting this to true will enable racial exp penalties for Iksar, Troll, Ogre, and Barbarian, as well as the bonus for Halflings
+RULE_BOOL(Character, UseOldClassExpPenalties, false)	// Setting this to true will enable old class exp penalties for Paladin, SK, Ranger, Bard, Monk, Wizard, Enchanter, Magician, and Necromancer, as well as the bonus for Rogues and Warriors
 RULE_BOOL(Character, RespawnFromHover, false)		// Use Respawn window, or not.
 RULE_INT(Character, RespawnFromHoverTimer, 300)	// Respawn Window countdown timer, in SECONDS
 RULE_BOOL(Character, UseNewStatsWindow, true)		// New stats window shows everything
@@ -123,6 +140,8 @@ RULE_BOOL(Character, ActiveInvSnapshots, false) // Takes a periodic snapshot of 
 RULE_INT(Character, InvSnapshotMinIntervalM, 180) // Minimum time (in minutes) between inventory snapshots
 RULE_INT(Character, InvSnapshotMinRetryM, 30) // Time (in minutes) to re-attempt an inventory snapshot after a failure
 RULE_INT(Character, InvSnapshotHistoryD, 30) // Time (in days) to keep snapshot entries
+RULE_BOOL(Character, RestrictSpellScribing, false) // Restricts spell scribing to allowable races/classes of spell scroll, if true
+RULE_BOOL(Character, UseStackablePickPocketing, true) // Allows stackable pickpocketed items to stack instead of only being allowed in empty inventory slots
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(Mercs)
@@ -230,6 +249,7 @@ RULE_BOOL(Zone, LevelBasedEXPMods, false) // Allows you to use the level_exp_mod
 RULE_INT(Zone, WeatherTimer, 600) // Weather timer when no duration is available
 RULE_BOOL(Zone, EnableLoggedOffReplenishments, true)
 RULE_INT(Zone, MinOfflineTimeToReplenishments, 21600) // 21600 seconds is 6 Hours
+RULE_BOOL(Zone, UseZoneController, true) // Enables the ability to use persistent quest based zone controllers (zone_controller.pl/lua)
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(Map)
@@ -357,6 +377,8 @@ RULE_BOOL(Spells, NPC_UseFocusFromSpells, true) // Allow npcs to use most spell 
 RULE_BOOL(Spells, NPC_UseFocusFromItems, false) // Allow npcs to use most item derived focus effects.
 RULE_BOOL(Spells, UseAdditiveFocusFromWornSlot, false) // Allows an additive focus effect to be calculated from worn slot.
 RULE_BOOL(Spells, AlwaysSendTargetsBuffs, false) // ignore LAA level if true
+RULE_BOOL(Spells, FlatItemExtraSpellAmt, false) // allow SpellDmg stat to affect all spells, regardless of cast time/cooldown/etc
+RULE_BOOL(Spells, IgnoreSpellDmgLvlRestriction, false) // ignore the 5 level spread on applying SpellDmg
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(Combat)
@@ -446,7 +468,7 @@ RULE_REAL (Combat,TauntSkillFalloff, 0.33)//For every taunt skill point that's n
 RULE_BOOL (Combat,EXPFromDmgShield, false) //Determine if damage from a damage shield counts for EXP gain.
 RULE_INT(Combat, MonkACBonusWeight, 15)
 RULE_INT(Combat, ClientStunLevel, 55) //This is the level where client kicks and bashes can stun the target
-RULE_INT(Combat, QuiverWRHasteDiv, 3) //Weight Reduction is divided by this to get haste contribution for quivers
+RULE_INT(Combat, QuiverHasteCap, 1000) //Quiver haste cap 1000 on live for a while, currently 700 on live
 RULE_BOOL(Combat, UseArcheryBonusRoll, false) //Make the 51+ archery bonus require an actual roll
 RULE_INT(Combat, ArcheryBonusChance, 50)
 RULE_INT(Combat, BerserkerFrenzyStart, 35)
@@ -456,6 +478,9 @@ RULE_BOOL(Combat, ProjectileDmgOnImpact, true) //If enabled, projectiles (ie arr
 RULE_BOOL(Combat, MeleePush, true) // enable melee push
 RULE_INT(Combat, MeleePushChance, 50) // (NPCs) chance the target will be pushed. Made up, 100 actually isn't that bad
 RULE_BOOL(Combat, UseLiveCombatRounds, true) // turn this false if you don't want to worry about fixing up combat rounds for NPCs
+RULE_INT(Combat, NPCAssistCap, 5) // Maxiumium number of NPCs that will assist another NPC at once
+RULE_INT(Combat, NPCAssistCapTimer, 6000) // Time in milliseconds a NPC will take to clear assist aggro cap space
+RULE_BOOL(Combat, UseRevampHandToHand, false) // use h2h revamped dmg/delays I believe this was implemented during SoF
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(NPC)
@@ -491,6 +516,7 @@ RULE_INT(Aggro, PetSpellAggroMod, 10)
 RULE_REAL(Aggro, TunnelVisionAggroMod, 0.75) //people not currently the top hate generate this much hate on a Tunnel Vision mob
 RULE_INT(Aggro, MaxScalingProcAggro, 400) // Set to -1 for no limit. Maxmimum amount of aggro that HP scaling SPA effect in a proc will add.
 RULE_INT(Aggro, IntAggroThreshold, 75) // Int <= this will aggro regardless of level difference.
+RULE_BOOL(Aggro, AllowTickPulling, false) // tick pulling is an exploit in an NPC's call for help fixed sometime in 2006 on live
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(TaskSystem)
@@ -505,10 +531,14 @@ RULE_CATEGORY_END()
 #ifdef BOTS
 RULE_CATEGORY(Bots)
 RULE_INT(Bots, AAExpansion, 8) // Bots get AAs through this expansion
+RULE_INT(Bots, CommandSpellRank, 1) // Filters bot command spells by rank (1, 2 and 3 are valid filters - any other number allows all ranks)
 RULE_INT(Bots, CreationLimit, 150) // Number of bots that each account can create
 RULE_BOOL(Bots, FinishBuffing, false) // Allow for buffs to complete even if the bot caster is out of mana. Only affects buffing out of combat.
 RULE_BOOL(Bots, GroupBuffing, false) // Bots will cast single target buffs as group buffs, default is false for single. Does not make single target buffs work for MGB.
+RULE_INT(Bots, HealRotationMaxMembers, 24) // Maximum number of heal rotation members
+RULE_INT(Bots, HealRotationMaxTargets, 12) // Maximum number of heal rotation targets
 RULE_REAL(Bots, ManaRegen, 2.0) // Adjust mana regen for bots, 1 is fast and higher numbers slow it down 3 is about the same as players.
+RULE_BOOL(Bots, PreferNoManaCommandSpells, true) // Give sorting priority to newer no-mana spells (i.e., 'Bind Affinity')
 RULE_BOOL(Bots, QuestableSpawnLimit, false) // Optional quest method to manage bot spawn limits using the quest_globals name bot_spawn_limit, see: /bazaar/Aediles_Thrall.pl
 RULE_BOOL(Bots, QuestableSpells, false) // Anita Thrall's (Anita_Thrall.pl) Bot Spell Scriber quests.
 RULE_INT(Bots, SpawnLimit, 71) // Number of bots a character can have spawned at one time, You + 71 bots is a 12 group raid
